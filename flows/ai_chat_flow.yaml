@@ -1,0 +1,10 @@
+# Vertu Edge AI Flow - Demonstrates AI-powered actions
+appId: com.vertu.edge
+name: AI Chat Automation
+---
+- launchApp: com.vertu.edge
+- tapOn: "AI Chat"
+- inputText: "Summarize the latest news"
+- runAiPrompt: "Summarize the latest news"
+- assertVisible: "Summary"
+- takeScreenshot: "ai_response"

@@ -1,0 +1,13 @@
+# Vertu Edge Flow Example
+appId: com.android.contacts
+name: Create Contact
+---
+- launchApp: com.android.contacts
+- tapOn: "Create new contact"
+- tapOn: "First Name"
+- inputText: "John"
+- tapOn: "Last Name"
+- inputText: "Snow"
+- tapOn: "Save"
+- assertVisible: "John Snow"
+- takeScreenshot: "contact_created"

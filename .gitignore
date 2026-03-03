@@ -1,0 +1,44 @@
+# Android
+.gradle/
+local.properties
+Android/.gradle/
+Android/build/
+Android/app/build/
+Android/captures/
+Android/keystore/
+*.jks
+*.keystore
+
+# Kotlin
+*.class
+*.kotlin_module
+
+# iOS
+iOS/.build/
+iOS/build/
+iOS/DerivedData/
+iOS/.swiftpm/
+*.xcuserstate
+xcuserdata/
+
+# General
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+*.iml
+.vscode/
+out/
+tmp/
+
+# Models (large binary files)
+*.litertlm
+*.tflite
+*.onnx
+
+# Secrets
+local.properties
+secrets.properties
+google-services.json
+GoogleService-Info.plist

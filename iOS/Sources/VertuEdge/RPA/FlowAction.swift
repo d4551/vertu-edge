@@ -1,0 +1,15 @@
+enum FlowAction {
+    case launchApp(appId: String)
+    case tapOn(selector: String, optional: Bool = false)
+    case inputText(String)
+    case assertVisible(String)
+    case assertNotVisible(String)
+    case scrollUntilVisible(selector: String, direction: String = "down")
+    case openLink(url: String)
+    case wait(durationMs: Int)
+    case pressKey(String)
+    case runAiPrompt(prompt: String, modelId: String? = nil)
+    case webAction(action: String, selector: String? = nil, value: String? = nil)
+    case takeScreenshot(label: String? = nil)
+    case clearState(appId: String)
+}

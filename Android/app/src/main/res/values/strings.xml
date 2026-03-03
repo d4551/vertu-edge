@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Vertu Edge</string>
+    <string name="home_tagline">AI-powered mobile automation. Precision crafted.</string>
+    <string name="run_flow">Run Flow</string>
+    <string name="download_models">Download Models</string>
+    <string name="flow_runner_title">Flow Runner</string>
+    <string name="model_download_title">AI Models</string>
+    <string name="flow_yaml_label">Flow YAML</string>
+    <string name="flow_running">Running flow…</string>
+    <string name="flow_success">Flow completed successfully</string>
+    <string name="search_models">Search HuggingFace models</string>
+    <string name="downloading_model">Downloading %1$s…</string>
+</resources>
