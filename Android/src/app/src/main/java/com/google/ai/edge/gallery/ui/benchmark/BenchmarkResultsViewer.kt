@@ -280,9 +280,30 @@ fun BenchmarkResultsViewer(
             contentAlignment = Alignment.TopCenter,
           ) {
             Column(modifier = Modifier.fillMaxWidth()) {
-              // Results.
-              //
-              // Empty state.
+              if (uiState.benchmarkError != null) {
+                Row(
+                  modifier = Modifier.fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.errorContainer)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                  Text(
+                    stringResource(R.string.benchmark_error, uiState.benchmarkError!!),
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                  )
+                  IconButton(onClick = { viewModel.clearBenchmarkError() }) {
+                    Icon(
+                      Icons.Rounded.Close,
+                      contentDescription = stringResource(R.string.dismiss),
+                      tint = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                  }
+                }
+              }
+
               if (filteredResults.isEmpty()) {
                 Column(
                   verticalArrangement = Arrangement.Center,
@@ -314,7 +335,7 @@ fun BenchmarkResultsViewer(
                         ) {
                           Icon(
                             Icons.Rounded.UnfoldMoreDouble,
-                            contentDescription = null,
+                            contentDescription = stringResource(R.string.cd_expand_all),
                             modifier = Modifier.padding(end = 4.dp).size(16.dp),
                           )
                           Text(stringResource(R.string.expand_all))
@@ -325,7 +346,7 @@ fun BenchmarkResultsViewer(
                         ) {
                           Icon(
                             Icons.Rounded.UnfoldLessDouble,
-                            contentDescription = null,
+                            contentDescription = stringResource(R.string.cd_collapse_all),
                             modifier = Modifier.padding(end = 4.dp).size(16.dp),
                           )
                           Text(stringResource(R.string.collapse_all))
@@ -370,7 +391,7 @@ fun BenchmarkResultsViewer(
                                   {
                                     Icon(
                                       Icons.Rounded.Check,
-                                      contentDescription = null,
+                                      contentDescription = stringResource(R.string.cd_baseline),
                                       modifier = Modifier.size(16.dp).offset(x = 2.dp),
                                     )
                                   }
@@ -400,24 +421,30 @@ fun BenchmarkResultsViewer(
                               verticalArrangement = Arrangement.spacedBy(8.dp),
                               modifier = Modifier.padding(start = 6.dp, top = 6.dp, bottom = 4.dp),
                             ) {
-                              StatRow(label = "Model", value = llmResult.baiscInfo.modelName)
                               StatRow(
-                                label = "Accelerator",
+                                label = stringResource(R.string.benchmark_stat_model),
+                                value = llmResult.baiscInfo.modelName,
+                              )
+                              StatRow(
+                                label = stringResource(R.string.benchmark_stat_accelerator),
                                 value = llmResult.baiscInfo.accelerator,
                               )
                               StatRow(
-                                label = "Prefill tokens",
+                                label = stringResource(R.string.benchmark_stat_prefill_tokens),
                                 value = "${llmResult.baiscInfo.prefillTokens}",
                               )
                               StatRow(
-                                label = "Decode tokens",
+                                label = stringResource(R.string.benchmark_stat_decode_tokens),
                                 value = "${llmResult.baiscInfo.decodeTokens}",
                               )
                               StatRow(
-                                label = "Number of runs",
+                                label = stringResource(R.string.benchmark_stat_number_of_runs),
                                 value = "${llmResult.baiscInfo.numberOfRuns}",
                               )
-                              StatRow(label = "App version", value = llmResult.baiscInfo.appVersion)
+                              StatRow(
+                                label = stringResource(R.string.benchmark_stat_app_version),
+                                value = llmResult.baiscInfo.appVersion,
+                              )
                             }
                           }
 
@@ -460,14 +487,14 @@ fun BenchmarkResultsViewer(
                                         .height(24.dp),
                                   ) {
                                     Text(
-                                      result.aggregation.label,
+                                      stringResource(result.aggregation.labelResId),
                                       color = MaterialTheme.colorScheme.onSurfaceVariant,
                                       style = MaterialTheme.typography.labelMedium,
                                     )
                                     Icon(
                                       Icons.Rounded.ArrowDropDown,
                                       modifier = Modifier.size(20.dp),
-                                      contentDescription = null,
+                                      contentDescription = stringResource(R.string.cd_dropdown),
                                     )
                                   }
                                   DropdownMenu(
@@ -476,7 +503,7 @@ fun BenchmarkResultsViewer(
                                   ) {
                                     for (aggregation in Aggregation.entries) {
                                       DropdownMenuItem(
-                                        text = { Text(aggregation.label) },
+                                        text = { Text(stringResource(aggregation.labelResId)) },
                                         onClick = {
                                           showAggregationDropdown = false
                                           viewModel.setAggregation(
@@ -499,10 +526,10 @@ fun BenchmarkResultsViewer(
                               val baselineStats =
                                 uiState.baselineResult?.benchmarkResult?.llmResult?.stats
                               ValueSeriesRow(
-                                label = "Prefill speed",
+                                label = stringResource(R.string.benchmark_stat_prefill_speed),
                                 valueSeries = llmResult.stats.prefillSpeed,
                                 aggregation = result.aggregation,
-                                unit = "tokens/sec",
+                                unit = stringResource(R.string.benchmark_unit_tokens_per_sec),
                                 baselineValueSeries =
                                   if (result.id != uiState.baselineResult?.id) {
                                     baselineStats?.prefillSpeed
@@ -517,10 +544,10 @@ fun BenchmarkResultsViewer(
                                   },
                               )
                               ValueSeriesRow(
-                                label = "Decode speed",
+                                label = stringResource(R.string.benchmark_stat_decode_speed),
                                 valueSeries = llmResult.stats.decodeSpeed,
                                 aggregation = result.aggregation,
-                                unit = "tokens/sec",
+                                unit = stringResource(R.string.benchmark_unit_tokens_per_sec),
                                 baselineValueSeries =
                                   if (result.id != uiState.baselineResult?.id) {
                                     baselineStats?.decodeSpeed
@@ -535,10 +562,10 @@ fun BenchmarkResultsViewer(
                                   },
                               )
                               ValueSeriesRow(
-                                label = "Time to first token",
+                                label = stringResource(R.string.benchmark_stat_time_to_first_token),
                                 valueSeries = llmResult.stats.timeToFirstToken,
                                 aggregation = result.aggregation,
-                                unit = "sec",
+                                unit = stringResource(R.string.benchmark_unit_sec),
                                 baselineValueSeries =
                                   if (result.id != uiState.baselineResult?.id) {
                                     baselineStats?.timeToFirstToken
@@ -554,14 +581,14 @@ fun BenchmarkResultsViewer(
                                 lessIsBetter = true,
                               )
                               StatRow(
-                                label = "First init time",
+                                label = stringResource(R.string.benchmark_stat_first_init_time),
                                 value =
                                   String.format(
                                     Locale.getDefault(),
                                     "%.2f",
                                     llmResult.stats.firstInitTimeMs,
                                   ),
-                                unit = "ms",
+                                unit = stringResource(R.string.benchmark_unit_ms),
                                 baselineValue =
                                   if (result.id != uiState.baselineResult?.id) {
                                     baselineStats?.firstInitTimeMs
@@ -572,10 +599,10 @@ fun BenchmarkResultsViewer(
                               )
                               if (llmResult.stats.nonFirstInitTimeMs.valueCount > 1) {
                                 ValueSeriesRow(
-                                  label = "Steady init time",
+                                  label = stringResource(R.string.benchmark_stat_steady_init_time),
                                   valueSeries = llmResult.stats.nonFirstInitTimeMs,
                                   aggregation = result.aggregation,
-                                  unit = "ms",
+                                  unit = stringResource(R.string.benchmark_unit_ms),
                                   baselineValueSeries =
                                     if (result.id != uiState.baselineResult?.id) {
                                       baselineStats?.nonFirstInitTimeMs
@@ -614,7 +641,7 @@ fun BenchmarkResultsViewer(
                               ) {
                                 Icon(
                                   Icons.Rounded.DeleteOutline,
-                                  contentDescription = null,
+                                  contentDescription = stringResource(R.string.cd_delete),
                                   modifier = Modifier.size(20.dp),
                                 )
                                 Text(stringResource(R.string.delete))
@@ -652,7 +679,7 @@ fun BenchmarkResultsViewer(
                               ) {
                                 Icon(
                                   Icons.Rounded.ContentCopy,
-                                  contentDescription = null,
+                                  contentDescription = stringResource(R.string.cd_copy),
                                   modifier = Modifier.size(20.dp),
                                   tint = MaterialTheme.colorScheme.onSecondaryContainer,
                                 )
@@ -736,7 +763,7 @@ fun BenchmarkResultsViewer(
         verticalArrangement = Arrangement.spacedBy(16.dp),
       ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          Icon(Icons.AutoMirrored.Outlined.HelpOutline, contentDescription = null)
+          Icon(Icons.AutoMirrored.Outlined.HelpOutline, contentDescription = stringResource(R.string.cd_help_outline))
           Text(
             stringResource(R.string.benchmark_comparison_help_title),
             style = MaterialTheme.typography.titleMedium,

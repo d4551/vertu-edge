@@ -81,7 +81,7 @@ fun ModelNameAndStatus(
         Icon(
           Icons.Filled.Star,
           tint = Color(0xFFFCC934),
-          contentDescription = null,
+          contentDescription = stringResource(R.string.cd_best_overall),
           modifier = Modifier.size(18.dp),
         )
         Text(
@@ -158,7 +158,7 @@ fun ModelNameAndStatus(
           }
           // Status for unzipping.
           else if (downloadStatus.status == ModelDownloadStatusType.UNZIPPING) {
-            sizeLabel = "Unzipping..."
+            sizeLabel = stringResource(R.string.unzipping)
           }
         }
 
@@ -185,7 +185,7 @@ fun ModelNameAndStatus(
         Icon(
           Icons.AutoMirrored.Outlined.OpenInNew,
           tint = MaterialTheme.customColors.modelInfoIconColor,
-          contentDescription = null,
+          contentDescription = stringResource(R.string.cd_open_in_new),
           modifier = Modifier.size(MODEL_INFO_ICON_SIZE).offset(y = 1.dp),
         )
         ClickableLink(model.learnMoreUrl, linkText = stringResource(R.string.learn_more))

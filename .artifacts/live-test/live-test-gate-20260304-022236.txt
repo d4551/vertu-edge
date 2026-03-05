@@ -1,0 +1,133 @@
+Live Test Gate Report
+Generated at: 2026-03-03T18:22:36Z
+Repository: /Users/brandondonnelly/Downloads/vertu-edge
+
+==> control-plane typecheck
+$ bunx tsc --noEmit
+src/app-builds.ts(34,12): error TS2304: Cannot find name 'APP_BUILD_ROUTE'.
+src/app.ts(460,73): error TS2339: Property 'message' does not exist on type 'FlowRuntimeError | { readonly message?: string | undefined; }'.
+  Property 'message' does not exist on type 'FlowCapabilityError'.
+src/app.ts(461,20): error TS2339: Property 'message' does not exist on type 'FlowRuntimeError | { readonly message?: string | undefined; }'.
+  Property 'message' does not exist on type 'FlowCapabilityError'.
+src/app.ts(477,29): error TS2345: Argument of type 'CapabilityFailure' is not assignable to parameter of type 'string | number | boolean | FlowCapabilityError | Error | { commandIndex?: number | null | undefined; command?: string | null | undefined; reason?: string | ... 1 more ... | undefined; retryable?: boolean | ... 1 more ... | undefined; } | null | undefined'.
+  Type '{ readonly message?: string | undefined; }' is not assignable to type 'string | number | boolean | FlowCapabilityError | Error | { commandIndex?: number | null | undefined; command?: string | null | undefined; reason?: string | ... 1 more ... | undefined; retryable?: boolean | ... 1 more ... | undefined; } | null | undefined'.
+    Property 'name' is missing in type '{ readonly message?: string | undefined; }' but required in type 'Error'.
+src/app.ts(664,3): error TS2322: Type 'Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, { get: { body: unknown; params: {}; query: unknown; headers: unknown; response: { ...; }; }; } & ... 14 more ... & { ...; }, { ...; ...' is not assignable to type 'Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, {}, { derive: {}; resolve: {}; schema: {}; standaloneSchema: {}; response: {}; }, { ...; }>'.
+  Types of property 'onStart' are incompatible.
+    Type '(handler: MaybeArray<GracefulHandler<Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, { get: { body: unknown; params: {}; query: unknown; headers: unknown; response: { ...; }; }; } ...' is not assignable to type '(handler: MaybeArray<GracefulHandler<Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, {}, { derive: {}; resolve: {}; schema: {}; standaloneSchema: {}; response: {}; }, { ...; }>>>) ...'.
+      Types of parameters 'handler' and 'handler' are incompatible.
+        Type 'MaybeArray<GracefulHandler<Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, {}, { derive: {}; resolve: {}; schema: {}; standaloneSchema: {}; response: {}; }, { ...; }>>>' is not assignable to type 'MaybeArray<GracefulHandler<Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, { get: { body: unknown; params: {}; query: unknown; headers: unknown; response: { ...; }; }; } & ... 14 m...'.
+          Type 'GracefulHandler<Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, {}, { derive: {}; resolve: {}; schema: {}; standaloneSchema: {}; response: {}; }, { ...; }>>' is not assignable to type 'MaybeArray<GracefulHandler<Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, { get: { body: unknown; params: {}; query: unknown; headers: unknown; response: { ...; }; }; } & ... 14 m...'.
+FAIL: control-plane typecheck
+
+==> control-plane tests
+bun test v1.3.10 (30e609e0)
+
+test/http-model-build-routes.test.ts:
+(pass) HTTP model/build capability routes > POST /api/models/pull returns loading envelope for AutoGLM request [10.47ms]
+(pass) HTTP model/build capability routes > POST /api/models/pull malformed ref renders non-retryable envelope [1.36ms]
+(pass) HTTP model/build capability routes > GET /api/models/pull/:jobId returns terminal envelope fields [1.07ms]
+170 |       headers: { "content-type": "application/json" },
+171 |       body: JSON.stringify({ platform: "android", buildType: "debug", skipTests: true }),
+172 |     });
+173 | 
+174 |     expect(html).toContain('data-state="loading"');
+175 |     expect(html).toContain("Job ID: app-build-queued");
+                       ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "Job ID: app-build-queued"
+Received: "<section class=\"space-y-3\" data-state=\"loading\" data-envelope=\"{&quot;route&quot;:&quot;/api/apps/build&quot;,&quot;state&quot;:&quot;loading&quot;,&quot;jobId&quot;:&quot;app-build-queued&quot;,&quot;data&quot;:{&quot;platform&quot;:&quot;android&quot;,&quot;buildType&quot;:&quot;debug&quot;,&quot;status&quot;:&quot;queued&quot;,&quot;exitCode&quot;:null,&quot;stdout&quot;:&quot;&quot;,&quot;stderr&quot;:&quot;&quot;,&quot;artifactPath&quot;:null,&quot;elapsedMs&quot;:0},&quot;mismatches&quot;:[]}\" aria-live=\"polite\">\n    <section class=\"space-y-3\" role=\"status\" aria-live=\"polite\" data-state=\"loading\" data-envelope=\"{&quot;route&quot;:&quot;/api/apps/build&quot;,&quot;state&quot;:&quot;loading&quot;,&quot;jobId&quot;:&quot;app-build-queued&quot;,&quot;data&quot;:{&quot;platform&quot;:&quot;android&quot;,&quot;buildType&quot;:&quot;debug&quot;,&quot;status&quot;:&quot;queued&quot;,&quot;exitCode&quot;:null,&quot;stdout&quot;:&quot;&quot;,&quot;stderr&quot;:&quot;&quot;,&quot;artifactPath&quot;:null,&quot;elapsedMs&quot;:0},&quot;mismatches&quot;:[]}\">\n    <div class=\"alert-info loading\" role=\"status\" aria-live=\"polite\">\n      <span>App Build: android buildType=debug, artifact=pending</span>\n      <ul class=\"list-disc list-inside text-xs mt-2 space-y-1\"><li>State: loading</li></ul>\n    </div>\n  </section>\n    <ul class=\"text-xs list-disc list-inside space-y-1\">\n      <li>Platform: android</li>\n      <li>Build type: debug</li>\n      <li>Exit code: -</li>\n      <li>Elapsed ms: 0</li>\n    </ul>\n    <div class=\"flex flex-wrap gap-2\">\n      \n        <button class=\"btn btn-outline btn-xs\" hx-get=\"/api/apps/build/app-build-queued\" hx-target=\"#app-build-result\" hx-swap=\"innerHTML\">Refresh</button>\n      \n      \n    </div>\n  </section>"
+
+      at <anonymous> (/Users/brandondonnelly/Downloads/vertu-edge/control-plane/test/http-model-build-routes.test.ts:175:18)
+(fail) HTTP model/build capability routes > POST /api/apps/build android request returns loading envelope [1.92ms]
+(pass) HTTP model/build capability routes > POST /api/apps/build iOS on non-mac renders explicit unsupported state [0.03ms]
+(pass) HTTP model/build capability routes > GET /api/apps/build/:jobId returns terminal envelope with artifact and elapsed [0.70ms]
+
+test/ui-state-model-build.test.ts:
+(pass) UI state machine: model pull + app build > dashboard renders idle state containers for model/build cards [1.75ms]
+(pass) UI state machine: model pull + app build > model pull route renders loading state [1.13ms]
+(pass) UI state machine: model pull + app build > model pull route renders retryable-error and non-retryable-error states [1.65ms]
+(pass) UI state machine: model pull + app build > app build route renders loading/success/retryable/non-retryable states [3.87ms]
+
+test/model-build-jobs.test.ts:
+(pass) startModelPullJob accepts AutoGLM model refs and returns loading envelope [53.23ms]
+(pass) startModelPullJob rejects malformed refs as non-retryable [0.12ms]
+(pass) startAppBuildJob returns explicit unsupported envelope for iOS on non-mac hosts [0.03ms]
+29 |   });
+30 | 
+31 |   void executeAppBuildJob(jobId, payload);
+32 | 
+33 |   return {
+34 |     route: APP_BUILD_ROUTE,
+                ^
+ReferenceError: APP_BUILD_ROUTE is not defined
+      at startAppBuildJob (/Users/brandondonnelly/Downloads/vertu-edge/control-plane/src/app-builds.ts:34:12)
+      at <anonymous> (/Users/brandondonnelly/Downloads/vertu-edge/control-plane/test/model-build-jobs.test.ts:94:26)
+(fail) startAppBuildJob android path returns loading envelope when Java is available [2.06ms]
+
+test/flow-capabilities.test.ts:
+(pass) parseMaestroYaml parses canonical object flow payload [0.39ms]
+(pass) parseMaestroYaml rejects unsupported commands with typed command index [0.07ms]
+(pass) RPADriver returns deterministic unsupported command failure details [0.20ms]
+
+test/contracts.test.ts:
+(pass) validateModelRef accepts huggingface owner/repo inputs [0.34ms]
+(pass) validateModelRef rejects malformed references [0.03ms]
+(pass) Build platform helpers are strict [0.02ms]
+(pass) Supported flow command registry matches parser command detection [0.02ms]
+
+ 19 pass
+ 2 fail
+ 80 expect() calls
+Ran 21 tests across 5 files. [113.00ms]
+FAIL: control-plane tests
+
+==> capability audit
+CAPABILITY_AUDIT checks passed: 23 capabilities, 8 documented commands, 8 registry commands.
+PASS: capability audit
+
+==> code practice audit
+178 |     }
+179 |   }
+180 | }
+181 | 
+182 | function fail(errors: string[]): never {
+183 |   throw new Error(`Code practice audit failed:\n${errors.map((error) => `- ${error}`).join("\n")}`);
+                  ^
+error: Code practice audit failed:
+- control-plane/src/model-manager.ts contains hardcoded capability route literals
+      at fail (/Users/brandondonnelly/Downloads/vertu-edge/scripts/check-code-practices.ts:183:13)
+      at main (/Users/brandondonnelly/Downloads/vertu-edge/scripts/check-code-practices.ts:196:5)
+      at /Users/brandondonnelly/Downloads/vertu-edge/scripts/check-code-practices.ts:202:1
+      at loadAndEvaluateModule (2:1)
+
+Bun v1.3.10 (macOS arm64)
+FAIL: code practice audit
+
+==> version freshness policy (offline)
+Version freshness checks passed (mode=offline).
+PASS: version freshness policy (offline)
+
+==> tooling typecheck
+$ tsc --noEmit
+PASS: tooling typecheck
+
+==> tooling tests
+bun test v1.3.10 (30e609e0)
+
+test/flow-cli.test.ts:
+VALID: /Users/brandondonnelly/Downloads/vertu-edge/contracts/fixtures/contact-flow.yaml
+COMPILED: /Users/brandondonnelly/Downloads/vertu-edge/contracts/fixtures/contact-flow.yaml.compiled.json
+(pass) validate and compile flow fixture [32.66ms]
+
+ 1 pass
+ 0 fail
+ 2 expect() calls
+Ran 1 test across 1 file. [56.00ms]
+PASS: tooling tests
+
+Summary
+- Total checks: 7
+- Failed checks: 3
+- Result: FAIL

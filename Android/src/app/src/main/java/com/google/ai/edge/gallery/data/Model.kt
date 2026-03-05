@@ -32,6 +32,22 @@ private val NORMALIZE_NAME_REGEX = Regex("[^a-zA-Z0-9]")
 data class PromptTemplate(val title: String, val description: String, val prompt: String)
 
 /**
+ * Holds the mutable runtime state for a [Model] that changes during the app lifecycle.
+ *
+ * Extracted from the Model data class so that data class equality/hashCode remain stable
+ * and StateFlow emissions are reliable. All mutation of these fields should go through
+ * this holder rather than directly on the Model constructor parameters.
+ */
+class ModelRuntimeState {
+  var instance: Any? = null
+  var initializing: Boolean = false
+  var cleanUpAfterInit: Boolean = false
+  var configValues: Map<String, Any> = mapOf()
+  var prevConfigValues: Map<String, Any> = mapOf()
+  var accessToken: String? = null
+}
+
+/**
  * A model for a task (see [Task]).
  *
  * A task can have multiple models. For example, a task might be "LLM Chat", and it might have
@@ -118,6 +134,9 @@ data class Model(
    */
   val url: String = "",
 
+  /** Source registry for this model entry. */
+  val source: String = "",
+
   /**
    * The size of the model file in bytes.
    *
@@ -142,6 +161,9 @@ data class Model(
    * {context.getExternalFilesDir}/{normalizedName}/{version}/{downloadFileName}
    */
   val version: String = "_",
+
+  /** Optional sha256 checksum for integrity validation. */
+  val sha256: String = "",
 
   /**
    * (optional, experimental)
@@ -228,35 +250,57 @@ data class Model(
   /** Whether the model is imported or not. */
   val imported: Boolean = false,
 
-  // The following fields are managed by the app. Don't need to set manually.
-  //
-  var normalizedName: String = "",
-  var instance: Any? = null,
-  var initializing: Boolean = false,
-  // TODO(jingjin): use a "queue" system to manage model init and cleanup.
-  var cleanUpAfterInit: Boolean = false,
-  var configValues: Map<String, Any> = mapOf(),
-  var prevConfigValues: Map<String, Any> = mapOf(),
-  var totalBytes: Long = 0L,
-  var accessToken: String? = null,
 ) {
-  init {
-    normalizedName = NORMALIZE_NAME_REGEX.replace(name, "_")
-  }
+  /**
+   * Mutable runtime state extracted from the data class so that equality/hashCode remain stable.
+   * Access fields through the delegating properties below.
+   */
+  @Transient val runtimeState: ModelRuntimeState = ModelRuntimeState()
+
+  var instance: Any?
+    get() = runtimeState.instance
+    set(value) { runtimeState.instance = value }
+
+  var initializing: Boolean
+    get() = runtimeState.initializing
+    set(value) { runtimeState.initializing = value }
+
+  var cleanUpAfterInit: Boolean
+    get() = runtimeState.cleanUpAfterInit
+    set(value) { runtimeState.cleanUpAfterInit = value }
+
+  var configValues: Map<String, Any>
+    get() = runtimeState.configValues
+    set(value) { runtimeState.configValues = value }
+
+  var prevConfigValues: Map<String, Any>
+    get() = runtimeState.prevConfigValues
+    set(value) { runtimeState.prevConfigValues = value }
+
+  var accessToken: String?
+    get() = runtimeState.accessToken
+    set(value) { runtimeState.accessToken = value }
+  /** Derived once from [name] at construction time; never re-assigned. */
+  val normalizedName: String = NORMALIZE_NAME_REGEX.replace(name, "_")
+
+  /** Total download size in bytes, computed once by [preProcess]. */
+  var totalBytes: Long = 0L
+    private set
 
   fun preProcess() {
     val configValues: MutableMap<String, Any> = mutableMapOf()
     for (config in this.configs) {
-      configValues[config.key.label] = config.defaultValue
+      configValues[config.key.id] = config.defaultValue
     }
     this.configValues = configValues
     this.totalBytes = this.sizeInBytes + this.extraDataFiles.sumOf { it.sizeInBytes }
   }
 
   fun getPath(context: Context, fileName: String = downloadFileName): String {
+    val externalFilesDir = context.getExternalFilesDir(null) ?: context.filesDir
+
     if (imported) {
-      return listOf(context.getExternalFilesDir(null)?.absolutePath ?: "", fileName)
-        .joinToString(File.separator)
+      return listOf(externalFilesDir.absolutePath, fileName).joinToString(File.separator)
     }
 
     if (localModelFilePathOverride.isNotEmpty()) {
@@ -265,20 +309,20 @@ data class Model(
 
     if (localFileRelativeDirPathOverride.isNotEmpty()) {
       return listOf(
-          context.getExternalFilesDir(null)?.absolutePath ?: "",
+          externalFilesDir.absolutePath,
           localFileRelativeDirPathOverride,
           fileName,
         )
         .joinToString(File.separator)
     }
 
-    val baseDir =
-      listOf(context.getExternalFilesDir(null)?.absolutePath ?: "", normalizedName, version)
+    val modelBaseDir =
+      listOf(externalFilesDir.absolutePath, normalizedName, version)
         .joinToString(File.separator)
     return if (this.isZip && this.unzipDir.isNotEmpty()) {
-      listOf(baseDir, this.unzipDir).joinToString(File.separator)
+      listOf(modelBaseDir, this.unzipDir).joinToString(File.separator)
     } else {
-      listOf(baseDir, fileName).joinToString(File.separator)
+      listOf(modelBaseDir, fileName).joinToString(File.separator)
     }
   }
 
@@ -312,7 +356,7 @@ data class Model(
 
   private fun getTypedConfigValue(key: ConfigKey, valueType: ValueType, defaultValue: Any): Any {
     return convertValueToTargetType(
-      value = configValues.getOrDefault(key.label, defaultValue),
+      value = configValues.getOrDefault(key.id, defaultValue),
       valueType = valueType,
     )
   }

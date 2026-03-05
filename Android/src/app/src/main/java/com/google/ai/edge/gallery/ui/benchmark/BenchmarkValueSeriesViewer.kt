@@ -16,6 +16,7 @@
 
 package com.google.ai.edge.gallery.ui.benchmark
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -192,17 +193,17 @@ fun BenchmarkValueSeriesViewer(title: String, valueSeries: ValueSeries, onDismis
         horizontalArrangement = Arrangement.SpaceBetween,
         modifier = Modifier.fillMaxWidth(),
       ) {
-        StatCell(key = "avg", value = valueSeries.avg)
-        StatCell(key = "median", value = valueSeries.medium)
-        StatCell(key = "min", value = valueSeries.min)
-        StatCell(key = "max", value = valueSeries.max)
+        StatCell(labelResId = R.string.stat_avg, value = valueSeries.avg)
+        StatCell(labelResId = R.string.stat_median, value = valueSeries.medium)
+        StatCell(labelResId = R.string.stat_min, value = valueSeries.min)
+        StatCell(labelResId = R.string.stat_max, value = valueSeries.max)
       }
     }
   }
 }
 
 @Composable
-private fun StatCell(key: String, value: Double) {
+private fun StatCell(@StringRes labelResId: Int, value: Double) {
   Column() {
     Text(
       String.format(Locale.getDefault(), "%.2f", value),
@@ -212,7 +213,7 @@ private fun StatCell(key: String, value: Double) {
       autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = 12.sp, stepSize = 1.sp),
     )
     Text(
-      key,
+      stringResource(labelResId),
       style = MaterialTheme.typography.labelSmall,
       color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
     )

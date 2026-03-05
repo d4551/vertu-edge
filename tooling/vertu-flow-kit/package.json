@@ -1,0 +1,29 @@
+{
+  "name": "@vertu/flow-kit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "vertu-flow": "src/cli.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "bunx eslint .",
+    "lint:fix": "bunx eslint . --fix",
+    "test": "bun test",
+    "validate": "bun src/cli.ts validate ../../contracts/fixtures/contact-flow.yaml",
+    "validate-model-manifest": "bun src/cli.ts validate-model-manifest ../../model_allowlist.json",
+    "doctor": "bun src/cli.ts doctor"
+  },
+  "dependencies": {
+    "ajv": "8.18.0",
+    "yaml": "2.8.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/bun": "1.3.10",
+    "eslint": "10.0.2",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.56.1"
+  }
+}

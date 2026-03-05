@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vertu.edge/schemas/flow-v1.schema.json",
+  "title": "FlowV1",
+  "type": "object",
+  "required": ["version", "appId", "steps"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "appId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["type"],
+            "properties": {"type": {"const": "launchApp"}},
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["type", "target"],
+            "properties": {
+              "type": {"const": "tapOn"},
+              "target": {"$ref": "#/$defs/target"}
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["type", "value"],
+            "properties": {
+              "type": {"const": "inputText"},
+              "value": {"type": "string"}
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["type", "target"],
+            "properties": {
+              "type": {"const": "assertVisible"},
+              "target": {"$ref": "#/$defs/target"}
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["type", "target"],
+            "properties": {
+              "type": {"const": "assertNotVisible"},
+              "target": {"$ref": "#/$defs/target"}
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["type", "target", "value"],
+            "properties": {
+              "type": {"const": "assertText"},
+              "target": {"$ref": "#/$defs/target"},
+              "value": {"type": "string"}
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["type", "target", "option"],
+            "properties": {
+              "type": {"const": "selectOption"},
+              "target": {"$ref": "#/$defs/target"},
+              "option": {"type": "string"}
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["type", "direction"],
+            "properties": {
+              "type": {"const": "scroll"},
+              "direction": {"$ref": "#/$defs/direction"},
+              "steps": {"type": "integer", "minimum": 1}
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["type", "direction"],
+            "properties": {
+              "type": {"const": "swipe"},
+              "direction": {"$ref": "#/$defs/direction"},
+              "distanceFraction": {
+                "type": "number",
+                "minimum": 0.2,
+                "maximum": 0.95
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["type"],
+            "properties": {"type": {"const": "screenshot"}},
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["type"],
+            "properties": {"type": {"const": "clipboardRead"}},
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["type", "value"],
+            "properties": {
+              "type": {"const": "clipboardWrite"},
+              "value": {"type": "string"}
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["type", "target"],
+            "properties": {
+              "type": {"const": "windowFocus"},
+              "target": {"$ref": "#/$defs/windowTarget"}
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["type"],
+            "properties": {"type": {"const": "hideKeyboard"}},
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": {"const": "waitForAnimation"},
+              "timeoutMs": {"type": "integer", "minimum": 1, "default": 600}
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "flowExecutionState": {
+      "type": "string",
+      "enum": ["idle", "loading", "success", "empty", "error-retryable", "error-non-retryable", "unauthorized"],
+      "description": "Canonical execution state. Wire format is kebab-case."
+    },
+    "direction": {
+      "type": "string",
+      "enum": ["UP", "DOWN", "LEFT", "RIGHT"]
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "resourceId": {"type": "string"},
+        "text": {"type": "string"},
+        "contentDescription": {"type": "string"},
+        "x": {"type": "integer", "minimum": 0},
+        "y": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "windowTarget": {
+      "type": "object",
+      "properties": {
+        "appId": {"type": "string"},
+        "title": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

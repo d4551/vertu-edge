@@ -20,38 +20,42 @@ import com.google.android.gms.oss.licenses.OssLicensesMenuActivity
 import android.app.UiModeManager
 import android.content.Context
 import android.content.Intent
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MultiChoiceSegmentedButtonRow
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,29 +64,30 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.google.ai.edge.gallery.BuildConfig
 import com.google.ai.edge.gallery.R
+import com.google.ai.edge.gallery.common.VertuRuntimeConfig
 import com.google.ai.edge.gallery.proto.Theme
 import com.google.ai.edge.gallery.ui.common.ClickableLink
 import com.google.ai.edge.gallery.ui.common.tos.AppTosDialog
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 import com.google.ai.edge.gallery.ui.theme.ThemeSettings
 import com.google.ai.edge.gallery.ui.theme.labelSmallNarrow
+import com.vertu.edge.core.flow.FlowExecutionState
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.Locale
+import java.time.format.FormatStyle
 import kotlin.math.min
 
 private val THEME_OPTIONS = listOf(Theme.THEME_AUTO, Theme.THEME_LIGHT, Theme.THEME_DARK)
@@ -97,15 +102,15 @@ fun SettingsDialog(
   var selectedTheme by remember { mutableStateOf(curThemeOverride) }
   var hfToken by remember { mutableStateOf(modelManagerViewModel.getTokenStatusAndData().data) }
   val dateFormatter = remember {
-    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+    DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
       .withZone(ZoneId.systemDefault())
-      .withLocale(Locale.getDefault())
   }
   var customHfToken by remember { mutableStateOf("") }
-  var isFocused by remember { mutableStateOf(false) }
   val focusRequester = remember { FocusRequester() }
   val interactionSource = remember { MutableInteractionSource() }
   var showTos by remember { mutableStateOf(false) }
+  val cloudUiState by modelManagerViewModel.uiState.collectAsState()
+  val resolvedCloudPullModelRef = cloudUiState.cloudPullModelRef.ifBlank { cloudUiState.selectedCloudModel }.trim()
 
   Dialog(onDismissRequest = onDismissed) {
     val focusManager = LocalFocusManager.current
@@ -126,13 +131,13 @@ fun SettingsDialog(
         // Dialog title and subtitle.
         Column {
           Text(
-            "Settings",
+            stringResource(R.string.settings),
             style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.padding(bottom = 8.dp),
           )
           // Subtitle.
           Text(
-            "App version: ${BuildConfig.VERSION_NAME}",
+            stringResource(R.string.app_version, BuildConfig.VERSION_NAME),
             style = labelSmallNarrow,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.offset(y = (-6).dp),
@@ -147,7 +152,7 @@ fun SettingsDialog(
           // Theme switcher.
           Column(modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}) {
             Text(
-              "Theme",
+              stringResource(R.string.theme),
               style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
             )
             MultiChoiceSegmentedButtonRow {
@@ -193,7 +198,7 @@ fun SettingsDialog(
             verticalArrangement = Arrangement.spacedBy(4.dp),
           ) {
             Text(
-              "HuggingFace access token",
+              stringResource(R.string.huggingface_access_token),
               style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
             )
             // Show the start of the token.
@@ -205,18 +210,18 @@ fun SettingsDialog(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
               Text(
-                "Expires at: ${dateFormatter.format(Instant.ofEpochMilli(curHfToken.expiresAtMs))}",
+                stringResource(R.string.expires_at, dateFormatter.format(Instant.ofEpochMilli(curHfToken.expiresAtMs))),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
             } else {
               Text(
-                "Not available",
+                stringResource(R.string.not_available),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
               Text(
-                "The token will be automatically retrieved when a gated model is downloaded",
+                stringResource(R.string.token_auto_retrieve_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
@@ -229,7 +234,7 @@ fun SettingsDialog(
                 },
                 enabled = curHfToken != null,
               ) {
-                Text("Clear")
+                Text(stringResource(R.string.clear))
               }
               val handleSaveToken = {
                 modelManagerViewModel.saveAccessToken(
@@ -240,61 +245,441 @@ fun SettingsDialog(
                 hfToken = modelManagerViewModel.getTokenStatusAndData().data
                 focusManager.clearFocus()
               }
-              BasicTextField(
+              OutlinedTextField(
                 value = customHfToken,
+                onValueChange = { customHfToken = it },
+                label = { Text(stringResource(R.string.enter_token_manually)) },
+                visualTransformation = PasswordVisualTransformation(),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { handleSaveToken() }),
+                trailingIcon = {
+                  if (customHfToken.isNotEmpty()) {
+                    IconButton(onClick = handleSaveToken) {
+                      Icon(
+                        Icons.Rounded.CheckCircle,
+                        contentDescription = stringResource(R.string.cd_done_icon),
+                      )
+                    }
+                  }
+                },
                 modifier =
                   Modifier.fillMaxWidth()
-                    .padding(top = 4.dp)
-                    .focusRequester(focusRequester)
-                    .onFocusChanged { isFocused = it.isFocused },
-                onValueChange = { customHfToken = it },
-                textStyle = TextStyle(color = MaterialTheme.colorScheme.onSurface),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
-              ) { innerTextField ->
-                Box(
-                  modifier =
-                    Modifier.border(
-                        width = if (isFocused) 2.dp else 1.dp,
-                        color =
-                          if (isFocused) MaterialTheme.colorScheme.primary
-                          else MaterialTheme.colorScheme.outline,
-                        shape = CircleShape,
-                      )
-                      .height(40.dp),
-                  contentAlignment = Alignment.CenterStart,
-                ) {
-                  Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(modifier = Modifier.padding(start = 16.dp).weight(1f)) {
-                      if (customHfToken.isEmpty()) {
-                        Text(
-                          "Enter token manually",
-                          color = MaterialTheme.colorScheme.onSurfaceVariant,
-                          style = MaterialTheme.typography.bodySmall,
-                        )
-                      }
-                      innerTextField()
-                    }
-                    if (customHfToken.isNotEmpty()) {
-                      IconButton(modifier = Modifier.offset(x = 1.dp), onClick = handleSaveToken) {
-                        Icon(
-                          Icons.Rounded.CheckCircle,
-                          contentDescription = stringResource(R.string.cd_done_icon),
-                        )
-                      }
-                    }
+                    .focusRequester(focusRequester),
+              )
+            }
+          }
+
+          // Cloud control plane controls (providers, models, pulls, chat).
+          Column(
+            modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            Text(
+              stringResource(R.string.cloud_ai_controls),
+              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
+            )
+
+            OutlinedTextField(
+              value = cloudUiState.controlPlaneBaseUrl,
+              onValueChange = { modelManagerViewModel.setControlPlaneBaseUrl(it) },
+              label = { Text(stringResource(R.string.control_plane_base_url)) },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+              Button(
+                onClick = { modelManagerViewModel.loadCloudProviders() },
+                enabled = !cloudUiState.isLoadingProviderRegistry,
+              ) {
+                Text(stringResource(R.string.load_configured_providers))
+              }
+              if (cloudUiState.isLoadingProviderRegistry) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp))
+              }
+            }
+            Text(
+              cloudUiState.providerRegistryMessage,
+              style = MaterialTheme.typography.bodySmall,
+              color = stateColor(cloudUiState.providerRegistryState),
+            )
+            if (cloudUiState.providerRegistryState == FlowExecutionState.ERROR_RETRYABLE) {
+              OutlinedButton(
+                onClick = { modelManagerViewModel.loadCloudProviders() },
+                enabled = !cloudUiState.isLoadingProviderRegistry,
+              ) {
+                Text(stringResource(R.string.retry))
+              }
+            }
+
+            if (cloudUiState.providerOptions.isNotEmpty()) {
+              Text(
+                stringResource(R.string.cloud_provider),
+                style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
+              )
+              Column {
+                cloudUiState.providerOptions.forEach { provider ->
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                  ) {
+                    val isSelectedProvider = provider == cloudUiState.selectedProvider
+                    RadioButton(
+                      selected = isSelectedProvider,
+                      onClick = {
+                        modelManagerViewModel.setSelectedProvider(provider)
+                      },
+                    )
+                    Text(provider)
                   }
                 }
               }
+            }
+            OutlinedTextField(
+              value = cloudUiState.providerApiKey,
+              onValueChange = { modelManagerViewModel.setProviderApiKey(it) },
+              label = { Text(stringResource(R.string.cloud_provider_api_key)) },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+              value = cloudUiState.providerBaseUrl,
+              onValueChange = { modelManagerViewModel.setProviderBaseUrl(it) },
+              label = { Text(stringResource(R.string.cloud_provider_base_url_optional)) },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+            )
+
+            HorizontalDivider()
+
+            Text(
+              stringResource(R.string.cloud_models),
+              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
+            )
+            OutlinedTextField(
+              value = cloudUiState.cloudModelSource,
+              onValueChange = { modelManagerViewModel.setCloudModelSource(it) },
+              label = { Text(stringResource(R.string.cloud_model_source)) },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+            )
+            if (cloudUiState.modelSourceOptions.isNotEmpty()) {
+              Text(
+                stringResource(R.string.cloud_source_options),
+                style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
+              )
+              Column(
+                modifier = Modifier.fillMaxWidth().wrapContentHeight(),
+              ) {
+                cloudUiState.modelSourceOptions.forEach { source ->
+                  val sourceLabel =
+                    if (source.displayName.equals(source.id, ignoreCase = true)) {
+                      source.displayName
+                    } else {
+                      "${source.displayName} (${source.id})"
+                    }
+                  TextButton(onClick = { modelManagerViewModel.setCloudModelSource(source.id) }) {
+                    Text(sourceLabel, style = MaterialTheme.typography.bodySmall)
+                  }
+                }
+              }
+            }
+            OutlinedTextField(
+              value = cloudUiState.selectedCloudModel,
+              onValueChange = { modelManagerViewModel.setSelectedCloudModel(it) },
+              label = { Text(stringResource(R.string.cloud_model)) },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+            )
+            if (cloudUiState.cloudModelOptions.isNotEmpty()) {
+              Text(
+                stringResource(R.string.cloud_model_options),
+                style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
+              )
+              Column(
+                modifier =
+                  Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight(),
+              ) {
+                cloudUiState.cloudModelOptions.forEach { model ->
+                  TextButton(onClick = { modelManagerViewModel.setSelectedCloudModel(model) }) {
+                    Text(model, style = MaterialTheme.typography.bodySmall)
+                  }
+                }
+              }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+              Button(
+                onClick = { modelManagerViewModel.loadCloudModelsForSelectedProvider() },
+                enabled =
+                  !cloudUiState.isLoadingCloudModels &&
+                    cloudUiState.selectedProvider.isNotBlank(),
+              ) {
+                Text(stringResource(R.string.refresh_model_list))
+              }
+              if (cloudUiState.isLoadingCloudModels) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp))
+              }
+            }
+            Text(
+              cloudUiState.cloudModelListMessage,
+              style = MaterialTheme.typography.bodySmall,
+              color = stateColor(cloudUiState.cloudModelListState),
+            )
+            if (cloudUiState.cloudModelListState == FlowExecutionState.ERROR_RETRYABLE) {
+              OutlinedButton(
+                onClick = { modelManagerViewModel.loadCloudModelsForSelectedProvider() },
+                enabled =
+                  !cloudUiState.isLoadingCloudModels &&
+                    cloudUiState.selectedProvider.isNotBlank(),
+              ) {
+                Text(stringResource(R.string.retry))
+              }
+            }
+
+            OutlinedTextField(
+              value = cloudUiState.cloudPullSource,
+              onValueChange = { modelManagerViewModel.setCloudPullSource(it) },
+              label = { Text(stringResource(R.string.cloud_pull_source)) },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+            )
+            if (cloudUiState.modelSourceOptions.isNotEmpty()) {
+              Column(
+                modifier = Modifier.fillMaxWidth().wrapContentHeight(),
+              ) {
+                cloudUiState.modelSourceOptions.forEach { source ->
+                  val sourceLabel =
+                    if (source.displayName.equals(source.id, ignoreCase = true)) {
+                      source.displayName
+                    } else {
+                      "${source.displayName} (${source.id})"
+                    }
+                  TextButton(onClick = { modelManagerViewModel.setCloudPullSource(source.id) }) {
+                    Text(sourceLabel, style = MaterialTheme.typography.bodySmall)
+                  }
+                }
+              }
+            }
+            OutlinedTextField(
+              value = cloudUiState.cloudPullModelRef,
+              onValueChange = { modelManagerViewModel.setCloudPullModelRef(it) },
+              label = { Text(stringResource(R.string.cloud_pull_model_reference)) },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+              value = cloudUiState.cloudPullTimeoutMsText,
+              onValueChange = { modelManagerViewModel.setCloudPullTimeoutMs(it) },
+              label = { Text(stringResource(R.string.cloud_pull_timeout_ms)) },
+              placeholder = {
+                Text(VertuRuntimeConfig.controlPlaneDefaultPullTimeoutMs.toString())
+              },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+              Checkbox(
+                checked = cloudUiState.cloudPullForce,
+                onCheckedChange = { modelManagerViewModel.setCloudPullForce(it) },
+              )
+              Text(stringResource(R.string.cloud_pull_force))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+              Button(
+                onClick = { modelManagerViewModel.pullCloudModel() },
+                enabled =
+                  !cloudUiState.isSubmittingCloudPull &&
+                    !cloudUiState.isPollingCloudPull &&
+                    cloudUiState.selectedProvider.isNotBlank() &&
+                    resolvedCloudPullModelRef.isNotBlank(),
+              ) {
+                Text(stringResource(R.string.start_model_pull))
+              }
+              if (cloudUiState.isSubmittingCloudPull || cloudUiState.isPollingCloudPull) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp))
+              }
+            }
+            Text(
+              cloudUiState.cloudPullMessage,
+              style = MaterialTheme.typography.bodySmall,
+              color = stateColor(cloudUiState.cloudPullState),
+            )
+            if (cloudUiState.cloudPullState == FlowExecutionState.ERROR_RETRYABLE) {
+              OutlinedButton(
+                onClick = { modelManagerViewModel.pullCloudModel() },
+                enabled =
+                  !cloudUiState.isSubmittingCloudPull &&
+                    !cloudUiState.isPollingCloudPull &&
+                    cloudUiState.selectedProvider.isNotBlank() &&
+                    resolvedCloudPullModelRef.isNotBlank(),
+              ) {
+                Text(stringResource(R.string.retry))
+              }
+            }
+            cloudUiState.cloudPullJobId?.let { jobId ->
+              Text(
+                stringResource(R.string.cloud_pull_job_id, jobId),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+
+            HorizontalDivider()
+
+            Text(
+              stringResource(R.string.cloud_chat),
+              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
+            )
+            OutlinedTextField(
+              value = cloudUiState.cloudChatMessage,
+              onValueChange = { modelManagerViewModel.setCloudChatMessage(it) },
+              label = { Text(stringResource(R.string.cloud_chat_message)) },
+              minLines = 2,
+              maxLines = 5,
+              modifier = Modifier.fillMaxWidth(),
+              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+              keyboardActions =
+                KeyboardActions(
+                  onDone = {
+                    modelManagerViewModel.sendCloudChat()
+                    focusManager.clearFocus()
+                  },
+                ),
+            )
+            OutlinedTextField(
+              value = cloudUiState.cloudChatSpeechInputMimeType,
+              onValueChange = { modelManagerViewModel.setCloudChatSpeechInputMimeType(it) },
+              label = { Text(stringResource(R.string.cloud_chat_speech_input_mime_type)) },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+              value = cloudUiState.cloudChatSpeechInputData,
+              onValueChange = { modelManagerViewModel.setCloudChatSpeechInputData(it) },
+              label = { Text(stringResource(R.string.cloud_chat_speech_input_data)) },
+              minLines = 2,
+              maxLines = 6,
+              modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+              Checkbox(
+                checked = cloudUiState.cloudChatRequestTts,
+                onCheckedChange = modelManagerViewModel::setCloudChatRequestTts,
+              )
+              Text(
+                stringResource(R.string.cloud_chat_request_tts),
+                style = MaterialTheme.typography.bodyMedium,
+              )
+            }
+            OutlinedTextField(
+              value = cloudUiState.cloudChatTtsOutputMimeType,
+              onValueChange = { modelManagerViewModel.setCloudChatTtsOutputMimeType(it) },
+              label = { Text(stringResource(R.string.cloud_chat_tts_output_mime_type)) },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+              value = cloudUiState.cloudChatTtsVoice,
+              onValueChange = { modelManagerViewModel.setCloudChatTtsVoice(it) },
+              label = { Text(stringResource(R.string.cloud_chat_tts_voice)) },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+            )
+
+            val canSubmitCloudChat = !cloudUiState.isSendingCloudChat &&
+              cloudUiState.selectedProvider.isNotBlank() &&
+              cloudUiState.selectedCloudModel.isNotBlank() &&
+              (
+                cloudUiState.cloudChatMessage.isNotBlank() ||
+                  (cloudUiState.cloudChatSpeechInputMimeType.isNotBlank()
+                    && cloudUiState.cloudChatSpeechInputData.isNotBlank())
+              )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+              Button(
+                onClick = {
+                  modelManagerViewModel.sendCloudChat()
+                  focusManager.clearFocus()
+                },
+                enabled = canSubmitCloudChat,
+              ) {
+                Text(stringResource(R.string.send))
+              }
+              if (cloudUiState.isSendingCloudChat) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp))
+              }
+              OutlinedButton(
+                onClick = { modelManagerViewModel.clearCloudChatReply() },
+                enabled = cloudUiState.cloudChatReply.isNotBlank(),
+              ) {
+                Text(stringResource(R.string.clear))
+              }
+            }
+            Text(
+              cloudUiState.cloudChatStateMessage,
+              style = MaterialTheme.typography.bodySmall,
+              color = stateColor(cloudUiState.cloudChatState),
+            )
+            if (cloudUiState.cloudChatState == FlowExecutionState.ERROR_RETRYABLE) {
+              OutlinedButton(
+                onClick = {
+                  modelManagerViewModel.sendCloudChat()
+                  focusManager.clearFocus()
+                },
+                enabled = canSubmitCloudChat,
+              ) {
+                Text(stringResource(R.string.retry))
+              }
+            }
+            if (cloudUiState.cloudChatReply.isNotBlank()) {
+              Text(
+                stringResource(R.string.cloud_chat_reply),
+                style = MaterialTheme.typography.titleSmall,
+              )
+              Text(
+                cloudUiState.cloudChatReply,
+                style = MaterialTheme.typography.bodySmall,
+              )
+            }
+            if (cloudUiState.cloudChatSpeechTranscript.isNotBlank()) {
+              Text(
+                stringResource(R.string.cloud_chat_speech_transcript),
+                style = MaterialTheme.typography.titleSmall,
+              )
+              Text(
+                cloudUiState.cloudChatSpeechTranscript,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+            if (cloudUiState.cloudChatTtsBase64Audio.isNotBlank()) {
+              Text(
+                stringResource(R.string.cloud_chat_tts_payload),
+                style = MaterialTheme.typography.titleSmall,
+              )
+              Text(
+                stringResource(
+                  R.string.cloud_chat_tts_mime_label,
+                  cloudUiState.cloudChatTtsMimeType.ifBlank { "audio/mpeg" },
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+              Text(
+                cloudUiState.cloudChatTtsBase64Audio,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 3,
+              )
             }
           }
 
           // Third party licenses.
           Column(modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}) {
             Text(
-              "Third-party libraries",
+              stringResource(R.string.third_party_libraries),
               style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
             )
             OutlinedButton(
@@ -305,7 +690,7 @@ fun SettingsDialog(
                 context.startActivity(intent)
               }
             ) {
-              Text("View licenses")
+              Text(stringResource(R.string.view_licenses))
             }
           }
 
@@ -337,7 +722,7 @@ fun SettingsDialog(
           horizontalArrangement = Arrangement.End,
         ) {
           // Close button
-          Button(onClick = { onDismissed() }) { Text("Close") }
+          Button(onClick = { onDismissed() }) { Text(stringResource(R.string.close)) }
         }
       }
     }
@@ -348,11 +733,25 @@ fun SettingsDialog(
   }
 }
 
+@Composable
 private fun themeLabel(theme: Theme): String {
   return when (theme) {
-    Theme.THEME_AUTO -> "Auto"
-    Theme.THEME_LIGHT -> "Light"
-    Theme.THEME_DARK -> "Dark"
-    else -> "Unknown"
+    Theme.THEME_AUTO -> stringResource(R.string.theme_auto)
+    Theme.THEME_LIGHT -> stringResource(R.string.theme_light)
+    Theme.THEME_DARK -> stringResource(R.string.theme_dark)
+    else -> stringResource(R.string.theme_unknown)
+  }
+}
+
+@Composable
+private fun stateColor(state: FlowExecutionState): androidx.compose.ui.graphics.Color {
+  return when (state) {
+    FlowExecutionState.IDLE -> MaterialTheme.colorScheme.onSurfaceVariant
+    FlowExecutionState.EMPTY -> MaterialTheme.colorScheme.secondary
+    FlowExecutionState.LOADING -> MaterialTheme.colorScheme.primary
+    FlowExecutionState.SUCCESS -> MaterialTheme.colorScheme.primary
+    FlowExecutionState.ERROR_RETRYABLE -> MaterialTheme.colorScheme.error
+    FlowExecutionState.ERROR_NON_RETRYABLE -> MaterialTheme.colorScheme.error
+    FlowExecutionState.UNAUTHORIZED -> MaterialTheme.colorScheme.error
   }
 }

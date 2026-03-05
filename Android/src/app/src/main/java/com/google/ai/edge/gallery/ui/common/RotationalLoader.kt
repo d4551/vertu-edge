@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.Brush.Companion.linearGradient
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import com.google.ai.edge.gallery.R
@@ -122,7 +123,7 @@ fun RotationalLoader(size: Dp) {
           linearGradient(colors = MaterialTheme.customColors.taskBgGradientColors[colorIndex])
         Image(
           painter = painterResource(id = imageResource),
-          contentDescription = null,
+          contentDescription = stringResource(R.string.cd_loading),
           modifier =
             Modifier.size(size * ICON_SIZE_FACTOR)
               .graphicsLayer {

@@ -1,0 +1,50 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "dev_doctor",
+      "type": "shell",
+      "command": "./scripts/dev_doctor.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "none"
+    },
+    {
+      "label": "dev_bootstrap",
+      "type": "shell",
+      "command": "./scripts/dev_bootstrap.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "none"
+    },
+    {
+      "label": "Android: assembleDebug",
+      "type": "shell",
+      "command": "./scripts/run_android_build.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "none"
+    },
+    {
+      "label": "control-plane: lint",
+      "type": "shell",
+      "command": "bun run lint",
+      "options": {
+        "cwd": "${workspaceFolder}/control-plane"
+      },
+      "group": "none"
+    },
+    {
+      "label": "flow-kit: lint",
+      "type": "shell",
+      "command": "bun run lint",
+      "options": {
+        "cwd": "${workspaceFolder}/tooling/vertu-flow-kit"
+      },
+      "group": "none"
+    }
+  ]
+}

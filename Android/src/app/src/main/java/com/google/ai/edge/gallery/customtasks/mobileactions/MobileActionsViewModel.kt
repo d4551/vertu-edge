@@ -66,7 +66,10 @@ data class MobileActionsUiState(
 @HiltViewModel
 class MobileActionsViewModel
 @Inject
-constructor(@ApplicationContext private val appContext: Context) : ViewModel() {
+constructor(
+  @ApplicationContext private val appContext: Context,
+  private val fallbackExecutor: VertuRpaFallbackExecutor,
+) : ViewModel() {
   protected val _uiState = MutableStateFlow(MobileActionsUiState())
   val uiState = _uiState.asStateFlow()
 
@@ -126,7 +129,7 @@ constructor(@ApplicationContext private val appContext: Context) : ViewModel() {
     model: Model,
     userPrompt: String,
     tools: List<MobileActionsTools>,
-    onProcessDone: () -> Unit,
+    onProcessDone: suspend () -> Unit,
     onError: (error: String) -> Unit,
   ) {
     if (model.instance == null) {
@@ -230,7 +233,7 @@ constructor(@ApplicationContext private val appContext: Context) : ViewModel() {
     }
   }
 
-  fun performAction(action: Action, context: Context): String {
+  suspend fun performAction(action: Action, context: Context): String {
     return when (action) {
       // Flashlight on.
       is FlashlightOnAction -> setFlashlight(context = context, isEnabled = true)
@@ -261,6 +264,14 @@ constructor(@ApplicationContext private val appContext: Context) : ViewModel() {
       // Create calendar events.
       is CreateCalendarEventAction ->
         createCalendarEvent(context = context, datetime = action.datetime, title = action.title)
+
+      // Execute RPA fallback flow.
+      is ExecuteFlowAction ->
+        fallbackExecutor.execute(
+          flowYaml = action.flowYaml,
+          consentToken = action.consentToken,
+          correlationId = action.correlationId,
+        )
 
       else -> ""
     }

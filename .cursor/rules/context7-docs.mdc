@@ -1,0 +1,28 @@
+---
+description: Use Context7 MCP for real-time documentation when implementing features
+globs: "**/*.ts,**/*.tsx,**/*.kt,**/*.swift,control-plane/**/*,tooling/**/*,Android/**/*"
+alwaysApply: false
+---
+
+# Context7 Documentation Lookup
+
+When implementing control-plane routes, flow-kit CLI, or Android/iOS features, use the Context7 MCP tools to fetch current documentation before coding.
+
+## Workflow
+
+1. **resolve-library-id** – Search for the library (query + libraryName, e.g. "ESLint TypeScript", "eslint").
+2. **query-docs** – Retrieve relevant snippets (libraryId from step 1 + query).
+
+## When to Use
+
+- Adding new Elysia routes or middleware in `control-plane/`
+- Extending the `vertu-flow` CLI in `tooling/vertu-flow-kit/`
+- UCP Commerce discovery, manifest validation, or schema alignment
+- Configuring ESLint, TypeScript, or lint tooling
+- Implementing Android Kotlin features or Gradle configuration
+- Implementing iOS Swift features
+- Debugging API mismatches or version upgrades
+
+## Note
+
+Context7 requires the MCP server to be configured and running in Cursor Settings. If the server is errored, resolve it before relying on real-time docs.

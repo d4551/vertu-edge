@@ -1,0 +1,8 @@
+{
+  "defaultModelRef": "huggingface.co/zai-org/AutoGLM-Phone-8B",
+  "presets": [
+    "huggingface.co/zai-org/AutoGLM-Phone-8B",
+    "huggingface.co/zai-org/AutoGLM-Phone-9B-Multilingual"
+  ],
+  "modelRefPlaceholder": "owner/repo or huggingface.co/owner/repo"
+}

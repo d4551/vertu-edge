@@ -193,7 +193,7 @@ fun GlobalModelManager(
               Icon(
                 Icons.AutoMirrored.Rounded.ListAlt,
                 modifier = Modifier.size(20.dp),
-                contentDescription = null,
+                contentDescription = stringResource(R.string.cd_list),
                 tint = MaterialTheme.colorScheme.onSurface,
               )
               Text(
@@ -227,7 +227,7 @@ fun GlobalModelManager(
         contentColor = MaterialTheme.colorScheme.secondary,
         modifier = Modifier.semantics { contentDescription = cdImportModelFab },
       ) {
-        Icon(Icons.Filled.Add, contentDescription = null)
+        Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.cd_add))
       }
     },
   ) { innerPadding ->
@@ -334,7 +334,7 @@ fun GlobalModelManager(
                 .padding(horizontal = 16.dp, vertical = 4.dp),
           ) {
             Text(
-              task.label,
+              if (task.labelResId != null) stringResource(task.labelResId) else task.label,
               color = MaterialTheme.colorScheme.onSurface,
               style = MaterialTheme.typography.titleMedium,
             )
@@ -349,7 +349,7 @@ fun GlobalModelManager(
   if (showImportModelSheet) {
     ModalBottomSheet(onDismissRequest = { showImportModelSheet = false }, sheetState = sheetState) {
       Text(
-        "Import model",
+        stringResource(R.string.import_model_title),
         style = MaterialTheme.typography.titleLarge,
         modifier = Modifier.padding(vertical = 4.dp, horizontal = 16.dp),
       )
@@ -383,8 +383,8 @@ fun GlobalModelManager(
           horizontalArrangement = Arrangement.spacedBy(6.dp),
           modifier = Modifier.fillMaxWidth().padding(16.dp),
         ) {
-          Icon(Icons.AutoMirrored.Outlined.NoteAdd, contentDescription = null)
-          Text("From local model file", modifier = Modifier.clearAndSetSemantics {})
+          Icon(Icons.AutoMirrored.Outlined.NoteAdd, contentDescription = stringResource(R.string.from_local_model_file))
+          Text(stringResource(R.string.from_local_model_file), modifier = Modifier.clearAndSetSemantics {})
         }
       }
     }
@@ -406,6 +406,7 @@ fun GlobalModelManager(
   }
 
   // Importing in progress dialog.
+  val modelImportedSuccessfullyMsg = stringResource(R.string.model_imported_successfully)
   if (showImportingDialog) {
     selectedLocalModelFileUri.value?.let { uri ->
       selectedImportedModelInfo.value?.let { info ->
@@ -418,7 +419,7 @@ fun GlobalModelManager(
             showImportingDialog = false
 
             // Show a snack bar for successful import.
-            scope.launch { snackbarHostState.showSnackbar("Model imported successfully") }
+            scope.launch { snackbarHostState.showSnackbar(modelImportedSuccessfullyMsg) }
           },
         )
       }
@@ -436,8 +437,8 @@ fun GlobalModelManager(
         )
       },
       onDismissRequest = { showUnsupportedFileTypeDialog = false },
-      title = { Text("Unsupported file type") },
-      text = { Text("Only \".task\" or \".litertlm\" file type is supported.") },
+      title = { Text(stringResource(R.string.unsupported_file_type)) },
+      text = { Text(stringResource(R.string.unsupported_file_type_message)) },
       confirmButton = {
         Button(onClick = { showUnsupportedFileTypeDialog = false }) {
           Text(stringResource(R.string.ok))
@@ -457,8 +458,8 @@ fun GlobalModelManager(
         )
       },
       onDismissRequest = { showUnsupportedWebModelDialog = false },
-      title = { Text("Unsupported model type") },
-      text = { Text("Looks like the model is a web-only model and is not supported by the app.") },
+      title = { Text(stringResource(R.string.unsupported_model_type)) },
+      text = { Text(stringResource(R.string.unsupported_model_type_message)) },
       confirmButton = {
         Button(onClick = { showUnsupportedWebModelDialog = false }) {
           Text(stringResource(R.string.ok))

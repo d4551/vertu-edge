@@ -1,0 +1,101 @@
+[
+  {
+    "id": "openai",
+    "displayName": "OpenAI",
+    "baseUrl": "https://api.openai.com/v1",
+    "requiresKey": true,
+    "defaultModels": ["gpt-4o", "gpt-4o-mini", "gpt-4.1-nano", "o4-mini"],
+    "docsUrl": "https://platform.openai.com/docs/api-reference"
+  },
+  {
+    "id": "anthropic",
+    "displayName": "Anthropic",
+    "baseUrl": "https://api.anthropic.com/v1",
+    "requiresKey": true,
+    "defaultModels": [
+      "claude-sonnet-4-20250514",
+      "claude-haiku-4-20250514",
+      "claude-3-5-haiku-20241022"
+    ],
+    "docsUrl": "https://docs.anthropic.com/en/docs/api-reference"
+  },
+  {
+    "id": "google",
+    "displayName": "Google Gemini",
+    "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "requiresKey": true,
+    "defaultModels": [
+      "gemini-2.5-flash",
+      "gemini-2.5-pro",
+      "gemini-2.0-flash-lite"
+    ],
+    "docsUrl": "https://ai.google.dev/gemini-api/docs"
+  },
+  {
+    "id": "mistral",
+    "displayName": "Mistral",
+    "baseUrl": "https://api.mistral.ai/v1",
+    "requiresKey": true,
+    "defaultModels": [
+      "mistral-large-latest",
+      "mistral-small-latest",
+      "codestral-latest"
+    ],
+    "docsUrl": "https://docs.mistral.ai/api/"
+  },
+  {
+    "id": "groq",
+    "displayName": "Groq",
+    "baseUrl": "https://api.groq.com/openai/v1",
+    "requiresKey": true,
+    "defaultModels": [
+      "llama-3.3-70b-versatile",
+      "llama-3.1-8b-instant",
+      "gemma2-9b-it",
+      "mixtral-8x7b-32768"
+    ],
+    "docsUrl": "https://console.groq.com/docs/api-reference"
+  },
+  {
+    "id": "openrouter",
+    "displayName": "OpenRouter",
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "requiresKey": true,
+    "defaultModels": [
+      "openai/gpt-4o",
+      "anthropic/claude-sonnet-4",
+      "google/gemini-2.5-flash",
+      "meta-llama/llama-3.3-70b-instruct"
+    ],
+    "docsUrl": "https://openrouter.ai/docs"
+  },
+  {
+    "id": "huggingface",
+    "displayName": "Hugging Face",
+    "baseUrl": "https://router.huggingface.co/v1",
+    "requiresKey": true,
+    "keyHint": "Token from huggingface.co/settings/tokens",
+    "defaultModels": [
+      "meta-llama/Meta-Llama-3.1-8B-Instruct",
+      "mistralai/Mistral-7B-Instruct-v0.2"
+    ],
+    "docsUrl": "https://huggingface.co/docs/inference-providers"
+  },
+  {
+    "id": "deepseek",
+    "displayName": "DeepSeek",
+    "baseUrl": "https://api.deepseek.com/v1",
+    "requiresKey": true,
+    "defaultModels": ["deepseek-chat", "deepseek-reasoner", "deepseek-coder"],
+    "docsUrl": "https://platform.deepseek.com/api-docs"
+  },
+  {
+    "id": "ollama",
+    "displayName": "Ollama",
+    "baseUrl": "http://localhost:11434",
+    "requiresKey": false,
+    "hasBaseUrlConfig": true,
+    "defaultModels": [],
+    "docsUrl": "https://github.com/ollama/ollama/blob/main/docs/api.md"
+  }
+]

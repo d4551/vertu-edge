@@ -1,0 +1,136 @@
+name: Vertu CI
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "Android/**"
+      - "control-plane/**"
+      - "vertu-core/**"
+      - "vertu-android-rpa/**"
+      - "tooling/vertu-flow-kit/**"
+      - "iOS/**"
+      - "contracts/**"
+      - "scripts/**"
+      - "docs/**"
+      - ".github/workflows/vertu-ci.yaml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "Android/**"
+      - "control-plane/**"
+      - "vertu-core/**"
+      - "vertu-android-rpa/**"
+      - "tooling/vertu-flow-kit/**"
+      - "iOS/**"
+      - "contracts/**"
+      - "scripts/**"
+      - "docs/**"
+      - ".github/workflows/vertu-ci.yaml"
+  workflow_dispatch:
+
+jobs:
+  android:
+    name: Android Build + Unit Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Android/src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Android assemble, lint, and test
+        run: ./gradlew :app:assembleDebug :app:lintDebug :app:testDebugUnitTest :vertu-android-rpa:testDebugUnitTest
+
+  kmp:
+    name: KMP Contracts Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Android/src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Run vertu-core JVM tests
+        run: ./gradlew :vertu-core:jvmTest
+
+  control-plane:
+    name: Control Plane Typecheck + Smoke Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: control-plane
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.10
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Typecheck
+        run: bun run typecheck
+      - name: Lint
+        run: bun run lint
+      - name: Test
+        run: bun test
+      - name: Capability audit
+        run: bun run ../scripts/check-capability-gaps.ts
+      - name: Code practice audit
+        run: bun run ../scripts/check-code-practices.ts
+      - name: Version freshness policy (offline)
+        run: bun run ../scripts/check-version-freshness.ts
+      - name: Docs consistency checks
+        run: |
+          grep -q '`POST /api/models/pull`' ../docs/FLOW_REFERENCE.md
+          grep -q '`GET /api/models/pull/:jobId`' ../docs/FLOW_REFERENCE.md
+          grep -q '`POST /api/apps/build`' ../docs/FLOW_REFERENCE.md
+          grep -q '`GET /api/apps/build/:jobId`' ../docs/FLOW_REFERENCE.md
+          grep -q '`POST /api/flows/validate`' ../docs/FLOW_REFERENCE.md
+          grep -q '`POST /api/ai/providers/validate`' ../docs/FLOW_REFERENCE.md
+          grep -qi 'iOS builds are unsupported on non-mac hosts' ../docs/FLOW_REFERENCE.md
+      - name: Smoke test HTTP server
+        run: |
+          DEFAULT_CONTROL_PLANE_PORT="$(bun -e 'import { CONTROL_PLANE_DEFAULT_PORT } from \"./src/config\"; console.log(CONTROL_PLANE_DEFAULT_PORT);')"
+          PORT="${CONTROL_PLANE_PORT:-${DEFAULT_CONTROL_PLANE_PORT}}"
+          CONTROL_PLANE_PORT="$PORT" bun run src/index.ts &
+          cp_pid=$!
+          sleep 2
+          curl -fsS "http://127.0.0.1:${PORT}/" >/dev/null
+          kill $cp_pid 2>/dev/null || true
+
+  tooling:
+    name: Flow Kit Typecheck + Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tooling/vertu-flow-kit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.10
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Typecheck
+        run: bun run typecheck
+      - name: Lint
+        run: bun run lint
+      - name: Test
+        run: bun test
+
+  ios:
+    name: iOS Swift Package Tests
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: iOS/VertuEdge
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run swift tests
+        run: swift test

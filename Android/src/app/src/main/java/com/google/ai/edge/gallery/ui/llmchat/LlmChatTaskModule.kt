@@ -45,6 +45,7 @@ class LlmChatTask @Inject constructor() : CustomTask {
     Task(
       id = BuiltInTaskId.LLM_CHAT,
       label = "AI Chat",
+      labelResId = R.string.task_ai_chat,
       category = Category.LLM,
       icon = Icons.Outlined.Forum,
       models = mutableListOf(),
@@ -104,6 +105,7 @@ class LlmAskImageTask @Inject constructor() : CustomTask {
     Task(
       id = BuiltInTaskId.LLM_ASK_IMAGE,
       label = "Ask Image",
+      labelResId = R.string.task_ask_image,
       category = Category.LLM,
       icon = Icons.Outlined.Mms,
       models = mutableListOf(),
@@ -166,6 +168,7 @@ class LlmAskAudioTask @Inject constructor() : CustomTask {
     Task(
       id = BuiltInTaskId.LLM_ASK_AUDIO,
       label = "Audio Scribe",
+      labelResId = R.string.task_audio_scribe,
       category = Category.LLM,
       icon = Icons.Outlined.Mic,
       models = mutableListOf(),

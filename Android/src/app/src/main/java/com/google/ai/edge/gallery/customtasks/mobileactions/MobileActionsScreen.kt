@@ -135,39 +135,40 @@ import kotlinx.coroutines.launch
 
 private const val TAG = "AGMAScreen"
 
-data class PromptTemplate(@StringRes val labelResId: Int, val prompt: String)
+data class PromptTemplate(
+  @StringRes val labelResId: Int,
+  @StringRes val promptResId: Int,
+)
 
 private val PROMPT_TEMPLATES =
   listOf(
     PromptTemplate(
       labelResId = R.string.prompt_template_label_flash_on,
-      prompt = "Turn on flashlight",
+      promptResId = R.string.prompt_template_prompt_flash_on,
     ),
     PromptTemplate(
       labelResId = R.string.prompt_template_label_flash_off,
-      prompt = "Turn off flashlight",
+      promptResId = R.string.prompt_template_prompt_flash_off,
     ),
     PromptTemplate(
       labelResId = R.string.prompt_template_label_create_contact,
-      prompt =
-        "Create contact John Smith with email address js@example.com and phone number 123 456 7890.",
+      promptResId = R.string.prompt_template_prompt_create_contact,
     ),
     PromptTemplate(
       labelResId = R.string.prompt_template_label_send_email,
-      prompt =
-        "Send an email to js@example.com with subject \"Meeting\" and body \"Hi John, let's meet at 3pm tomorrow.\"",
+      promptResId = R.string.prompt_template_prompt_send_email,
     ),
     PromptTemplate(
       labelResId = R.string.prompt_template_label_create_calendar_event,
-      prompt = "Create a calendar event at 2:30pm tomorrow for \"team meeting\"",
+      promptResId = R.string.prompt_template_prompt_create_calendar_event,
     ),
     PromptTemplate(
       labelResId = R.string.prompt_template_label_show_location_on_map,
-      prompt = "Show Googleplex on map",
+      promptResId = R.string.prompt_template_prompt_show_location_on_map,
     ),
     PromptTemplate(
       labelResId = R.string.prompt_template_label_open_wifi_settings,
-      prompt = "Open WIFI settings",
+      promptResId = R.string.prompt_template_prompt_open_wifi_settings,
     ),
   )
 
@@ -377,13 +378,11 @@ fun MainUi(
               }
             }
             if (errors.isNotEmpty()) {
-              scope.launch {
-                snackbarHostState.showSnackbar(
-                  errors.joinToString(separator = "; "),
-                  withDismissAction = true,
-                  duration = SnackbarDuration.Long,
-                )
-              }
+              snackbarHostState.showSnackbar(
+                errors.joinToString(separator = "; "),
+                withDismissAction = true,
+                duration = SnackbarDuration.Long,
+              )
             }
           }
           // No function recognized.
@@ -391,13 +390,11 @@ fun MainUi(
             viewModel.setNoFunctionRecognized(value = true)
 
             // Show a snack bar for unrecognized command.
-            scope.launch {
-              snackbarHostState.showSnackbar(
-                noFunctionCallSnackbarMessage,
-                withDismissAction = true,
-                duration = SnackbarDuration.Long,
-              )
-            }
+            snackbarHostState.showSnackbar(
+              noFunctionCallSnackbarMessage,
+              withDismissAction = true,
+              duration = SnackbarDuration.Long,
+            )
           }
         },
         onError = { error ->
@@ -457,7 +454,7 @@ fun MainUi(
                   Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                       item.icon,
-                      contentDescription = null,
+                      contentDescription = stringResource(R.string.cd_mobile_action),
                       modifier = Modifier.size(24.dp).padding(end = 8.dp),
                       tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -530,7 +527,7 @@ fun MainUi(
                           else MaterialTheme.colorScheme.onSurfaceVariant
                         Icon(
                           tab.icon,
-                          contentDescription = null,
+                          contentDescription = stringResource(tab.labelResId),
                           modifier = Modifier.size(16.dp).alpha(0.7f),
                           tint = titleColor,
                         )
@@ -633,13 +630,14 @@ fun MainUi(
           ) {
             Spacer(modifier = Modifier.width(12.dp))
             for (item in PROMPT_TEMPLATES) {
+              val promptText = stringResource(item.promptResId)
               Text(
                 stringResource(item.labelResId),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelLarge,
                 modifier =
                   Modifier.clip(RoundedCornerShape(12.dp))
-                    .clickable(enabled = !uiState.processing) { send(item.prompt) }
+                    .clickable(enabled = !uiState.processing) { send(promptText) }
                     .background(color = MaterialTheme.colorScheme.surfaceContainerLow)
                     .border(
                       width = 1.dp,
@@ -733,7 +731,7 @@ fun MainUi(
           },
           colors = ButtonDefaults.buttonColors(containerColor = taskColor),
         ) {
-          Text(stringResource(R.string.reset), color = Color.White)
+          Text(stringResource(R.string.reset), color = MaterialTheme.colorScheme.onPrimary)
         }
       },
     )

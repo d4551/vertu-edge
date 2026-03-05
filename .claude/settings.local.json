@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__claude_ai_Context7__resolve-library-id",
+      "mcp__claude_ai_Context7__query-docs",
+      "Bash(which bun && bun --version 2>&1; which swift && swift --version 2>&1 | head -3; java -version 2>&1 | head -3)",
+      "Bash(cd /Users/brandondonnelly/Downloads/vertu-edge/iOS/VertuEdge && swift test 2>&1)",
+      "Bash(export JAVA_HOME=\"/opt/homebrew/Cellar/openjdk@21/21.0.10/libexec/openjdk.jdk/Contents/Home\" && $JAVA_HOME/bin/java -version 2>&1)",
+      "Bash(export JAVA_HOME=\"/opt/homebrew/Cellar/openjdk@21/21.0.10/libexec/openjdk.jdk/Contents/Home\" && export ANDROID_SDK_ROOT=\"/opt/homebrew/share/android-commandlinetools\" && cd /Users/brandondonnelly/Downloads/vertu-edge/Android/src && ./gradlew :app:assembleDebug --no-daemon 2>&1 | tail -30)",
+      "mcp__claude_ai_daisyui-blueprint__search_daisyui_code",
+      "Bash(du -sh /Users/brandondonnelly/Downloads/vertu-edge/*/)"
+    ]
+  }
+}

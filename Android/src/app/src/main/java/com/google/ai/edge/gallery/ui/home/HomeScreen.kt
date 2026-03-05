@@ -88,8 +88,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.unit.dp
@@ -100,6 +103,7 @@ import com.google.ai.edge.gallery.data.AppBarActionType
 import com.google.ai.edge.gallery.data.Category
 import com.google.ai.edge.gallery.data.CategoryInfo
 import com.google.ai.edge.gallery.data.Task
+import com.google.ai.edge.gallery.common.VertuRuntimeConfig
 import com.google.ai.edge.gallery.ui.common.RevealingText
 import com.google.ai.edge.gallery.ui.common.SwipingText
 import com.google.ai.edge.gallery.ui.common.TaskIcon
@@ -310,6 +314,7 @@ fun HomeScreen(
             ) {
               GalleryTopAppBar(
                 title = stringResource(HomeScreenDestination.titleRes),
+                showLogo = true,
                 leftAction =
                   AppBarAction(
                     actionType = AppBarActionType.MENU,
@@ -337,7 +342,7 @@ fun HomeScreen(
                 // App title and intro text.
                 Column(
                   modifier =
-                    Modifier.padding(horizontal = 40.dp, vertical = 48.dp).semantics(
+                    Modifier.padding(horizontal = 32.dp, vertical = 48.dp).semantics(
                       mergeDescendants = true
                     ) {},
                   verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -427,14 +432,14 @@ fun HomeScreen(
         )
       },
       title = { Text(uiState.loadingModelAllowlistError) },
-      text = { Text("Please check your internet connection and try again later.") },
+      text = { Text(stringResource(R.string.check_internet_connection_message)) },
       onDismissRequest = { modelManagerViewModel.loadModelAllowlist() },
       confirmButton = {
-        TextButton(onClick = { modelManagerViewModel.loadModelAllowlist() }) { Text("Retry") }
+        TextButton(onClick = { modelManagerViewModel.loadModelAllowlist() }) { Text(stringResource(R.string.retry)) }
       },
       dismissButton = {
         TextButton(onClick = { modelManagerViewModel.clearLoadModelAllowlistError() }) {
-          Text("Cancel")
+          Text(stringResource(R.string.cancel))
         }
       },
     )
@@ -447,10 +452,13 @@ private fun AppTitle(enableAnimation: Boolean) {
   val secondLineText = stringResource(R.string.app_name_second_part)
   val titleColor = MaterialTheme.customColors.appTitleGradientColors[1]
   val screenWidthInDp = LocalConfiguration.current.screenWidthDp.dp
-  val fontSize = with(LocalDensity.current) { (screenWidthInDp.toPx() * 0.12f).toSp() }
+  // Divide by fontScale so the screen-proportional size is not doubled when the system font
+  // scale is applied on top. This respects the user's accessibility font size preference.
+  val fontScale = LocalDensity.current.fontScale
+  val fontSize = with(LocalDensity.current) { (screenWidthInDp.toPx() * 0.12f / fontScale).toSp() }
   val titleStyle = homePageTitleStyle.copy(fontSize = fontSize, lineHeight = fontSize)
 
-  // First line text "Google AI" and its animation.
+  // First line text "Vertu" and its animation.
   //
   // The animation starts with the first line of text swiping in from left to right, progressively
   // revealing itself in the title color (blue). Then, after a brief delay, the exact same text, but
@@ -489,6 +497,8 @@ private fun AppTitle(enableAnimation: Boolean) {
         text = secondLineText,
         style = titleStyle,
         color = titleColor,
+        // Offset to overlap title lines; tied to current title font size.
+        // If the title text style changes, this offset may need recalculation.
         modifier = Modifier.offset(y = (-16).dp),
         animationDelay = delay,
         animationDurationMs = TITLE_SECOND_LINE_ANIMATION_DURATION,
@@ -498,6 +508,8 @@ private fun AppTitle(enableAnimation: Boolean) {
         text = secondLineText,
         style = titleStyle,
         color = MaterialTheme.colorScheme.onSurface,
+        // Offset to overlap title lines; tied to current title font size.
+        // If the title text style changes, this offset may need recalculation.
         modifier = Modifier.offset(y = (-16).dp),
         animationDelay = delay,
         animationDurationMs = TITLE_SECOND_LINE_ANIMATION_DURATION,
@@ -510,6 +522,8 @@ private fun AppTitle(enableAnimation: Boolean) {
         titleStyle.copy(
           brush = linearGradient(colors = MaterialTheme.customColors.appTitleGradientColors)
         ),
+      // Offset to overlap title lines; tied to current title font size.
+      // If the title text style changes, this offset may need recalculation.
       modifier = Modifier.offset(x = (-16).dp, y = (-16).dp),
       animationDelay = if (enableAnimation) delay else 0,
       animationDurationMs = if (enableAnimation) TITLE_SECOND_LINE_ANIMATION_DURATION2 else 0,
@@ -519,9 +533,8 @@ private fun AppTitle(enableAnimation: Boolean) {
 
 @Composable
 private fun IntroText(enableAnimation: Boolean) {
-  val url = "https://huggingface.co/litert-community"
-  val linkColor = MaterialTheme.customColors.linkColor
-  val uriHandler = LocalUriHandler.current
+  // URL is sourced from VertuRuntimeConfig so it can be overridden per build.
+  val url = VertuRuntimeConfig.modelCommunityUrl
 
   // Intro text animation:
   //
@@ -535,6 +548,20 @@ private fun IntroText(enableAnimation: Boolean) {
         animationLabel = "intro text animation",
       )
 
+  val animationModifier =
+    Modifier.graphicsLayer {
+      alpha = progress
+      translationY = (CONTENT_COMPOSABLES_OFFSET_Y.dp * (1 - progress)).toPx()
+    }
+
+  // Brand tagline from VertuRuntimeConfig (e.g. "Concierge-grade mobile automation").
+  Text(
+    text = VertuRuntimeConfig.brandTagline,
+    style = MaterialTheme.typography.bodyMedium,
+    color = MaterialTheme.colorScheme.onSurfaceVariant,
+    modifier = animationModifier,
+  )
+
   val introText = buildAnnotatedString {
     append("${stringResource(R.string.app_intro)} ")
     append(
@@ -547,11 +574,7 @@ private fun IntroText(enableAnimation: Boolean) {
   Text(
     introText,
     style = MaterialTheme.typography.bodyMedium,
-    modifier =
-      Modifier.graphicsLayer {
-        alpha = progress
-        translationY = (CONTENT_COMPOSABLES_OFFSET_Y.dp * (1 - progress)).toPx()
-      },
+    modifier = animationModifier,
   )
 }
 
@@ -595,6 +618,10 @@ private fun CategoryTabHeader(
                 if (selectedIndex == index) MaterialTheme.customColors.tabHeaderBgColor
                 else Color.Transparent
             )
+            .semantics {
+              role = Role.Tab
+              selected = selectedIndex == index
+            }
             .clickable {
               onCategorySelected(index)
 
@@ -655,6 +682,8 @@ private fun TaskList(
   // Tracks when the initial animation is done.
   //
   var initialAnimationDone by remember { mutableStateOf(false) }
+  // Unit key is intentional: this effect runs exactly once on first composition to mark the
+  // initial stagger animation as complete after all task cards have had time to animate in.
   LaunchedEffect(Unit) {
     // Use 5 iterations to make sure all visible task cards are animated.
     delay(((TASK_CARD_ANIMATION_DURATION + TASK_CARD_ANIMATION_DELAY_OFFSET) * 5).toLong())
@@ -709,12 +738,14 @@ private fun TaskCard(
       }
     }
   }
+  val resources = LocalContext.current.resources
   val modelCountLabel by remember {
     derivedStateOf {
-      when (modelCount) {
-        1 -> "1 Model"
-        else -> "%d Models".format(modelCount)
-      }
+      resources.getQuantityString(
+        R.plurals.model_list_number_of_models_available,
+        modelCount,
+        modelCount,
+      )
     }
   }
   var curModelCountLabel by remember { mutableStateOf("") }
@@ -745,7 +776,9 @@ private fun TaskCard(
       )
     else 1f
 
-  val cbTask = stringResource(R.string.cd_task_card, task.label, task.models.size)
+  val taskLabel =
+    if (task.labelResId != null) stringResource(task.labelResId) else task.label
+  val cbTask = stringResource(R.string.cd_task_card, taskLabel, task.models.size)
   Card(
     modifier =
       modifier
@@ -764,14 +797,14 @@ private fun TaskCard(
       Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
           Text(
-            task.label,
+            taskLabel,
             color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.titleMedium,
           )
           if (task.experimental) {
             Icon(
               painter = painterResource(R.drawable.ic_experiment),
-              contentDescription = "Experimental",
+              contentDescription = stringResource(R.string.model_list_experimental_label),
               modifier = Modifier.size(20.dp).padding(start = 4.dp),
               tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -77,6 +77,33 @@ inline fun <reified T> getJsonResponse(url: String): JsonObjAndTextContent<T>? {
   return null
 }
 
+inline fun <reified T> getJsonResponseWithRetry(
+  url: String,
+  maxAttempts: Int = 3,
+  initialDelayMs: Long = 1000,
+): JsonObjAndTextContent<T>? {
+  var delayMs = initialDelayMs
+  repeat(maxAttempts) { attempt ->
+    val data = getJsonResponse<T>(url)
+    if (data != null) {
+      return data
+    }
+    if (attempt < maxAttempts - 1) {
+      try {
+        Thread.sleep(delayMs)
+      } catch (_: InterruptedException) {
+        Thread.currentThread().interrupt()
+        return null
+      }
+      delayMs *= 2
+      if (delayMs > 6000L) {
+        delayMs = 6000L
+      }
+    }
+  }
+  return null
+}
+
 fun convertWavToMonoWithMaxSeconds(
   context: Context,
   stereoUri: Uri,

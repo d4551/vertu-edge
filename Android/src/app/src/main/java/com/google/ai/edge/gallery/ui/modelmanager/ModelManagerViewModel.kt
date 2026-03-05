@@ -17,6 +17,8 @@
 package com.google.ai.edge.gallery.ui.modelmanager
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import androidx.activity.result.ActivityResult
 import androidx.core.net.toUri
@@ -26,7 +28,8 @@ import com.google.ai.edge.gallery.AppLifecycleProvider
 import com.google.ai.edge.gallery.BuildConfig
 import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.common.ProjectConfig
-import com.google.ai.edge.gallery.common.getJsonResponse
+import com.google.ai.edge.gallery.common.VertuRuntimeConfig
+import com.google.ai.edge.gallery.common.getJsonResponseWithRetry
 import com.google.ai.edge.gallery.customtasks.common.CustomTask
 import com.google.ai.edge.gallery.data.Accelerator
 import com.google.ai.edge.gallery.data.BuiltInTaskId
@@ -43,6 +46,14 @@ import com.google.ai.edge.gallery.data.ModelAllowlist
 import com.google.ai.edge.gallery.data.ModelDownloadStatus
 import com.google.ai.edge.gallery.data.ModelDownloadStatusType
 import com.google.ai.edge.gallery.data.NumberSliderConfig
+import com.google.ai.edge.gallery.data.CloudChatAudioPayload
+import com.google.ai.edge.gallery.data.CloudChatRequest
+import com.google.ai.edge.gallery.data.CloudChatEnvelope
+import com.google.ai.edge.gallery.data.CloudControlPlaneClient
+import com.google.ai.edge.gallery.data.CloudModelOptionsResult
+import com.google.ai.edge.gallery.data.CloudModelSourceDescriptor
+import com.google.ai.edge.gallery.data.CloudModelPullEnvelope
+import com.google.ai.edge.gallery.data.CloudModelPullRequest
 import com.google.ai.edge.gallery.data.TMP_FILE_EXT
 import com.google.ai.edge.gallery.data.Task
 import com.google.ai.edge.gallery.data.ValueType
@@ -58,23 +69,26 @@ import java.net.HttpURLConnection
 import java.net.URL
 import javax.inject.Inject
 import kotlin.collections.sortedWith
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationRequest
 import net.openid.appauth.AuthorizationResponse
 import net.openid.appauth.AuthorizationService
 import net.openid.appauth.ResponseTypeValues
+import com.vertu.edge.core.flow.FlowExecutionState
 
 private const val TAG = "AGModelManagerViewModel"
 private const val TEXT_INPUT_HISTORY_MAX_SIZE = 50
 private const val MODEL_ALLOWLIST_FILENAME = "model_allowlist.json"
 private const val MODEL_ALLOWLIST_TEST_FILENAME = "model_allowlist_test.json"
-private const val ALLOWLIST_BASE_URL =
-  "https://raw.githubusercontent.com/google-ai-edge/gallery/refs/heads/main/model_allowlists"
 
 private const val TEST_MODEL_ALLOW_LIST = ""
 
@@ -128,6 +142,53 @@ data class ModelManagerUiState(
   /** The currently selected model. */
   val selectedModel: Model = EMPTY_MODEL,
 
+  /** Cloud control-plane base URL override. */
+  val controlPlaneBaseUrl: String = VertuRuntimeConfig.controlPlaneBaseUrl,
+
+  /** Provider registry state. */
+  val isLoadingProviderRegistry: Boolean = false,
+  val providerRegistryState: FlowExecutionState = FlowExecutionState.IDLE,
+  val providerRegistryMessage: String = "",
+  val providerOptions: List<String> = listOf(),
+  val selectedProvider: String = "",
+
+  /** Provider model registry state. */
+  val isLoadingCloudModels: Boolean = false,
+  val cloudModelListState: FlowExecutionState = FlowExecutionState.IDLE,
+  val cloudModelListMessage: String = "",
+  val cloudModelOptions: List<String> = listOf(),
+  val selectedCloudModel: String = "",
+  val modelSourceOptions: List<CloudModelSourceDescriptor> = listOf(),
+  val cloudModelSource: String = "",
+  val providerApiKey: String = "",
+  val providerBaseUrl: String = "",
+
+  /** Pull job state. */
+  val cloudPullModelRef: String = "",
+  val cloudPullSource: String = "",
+  val cloudPullTimeoutMsText: String = "",
+  val cloudPullForce: Boolean = false,
+  val cloudPullJobId: String? = null,
+  val cloudPullState: FlowExecutionState = FlowExecutionState.IDLE,
+  val cloudPullMessage: String = "",
+  val isSubmittingCloudPull: Boolean = false,
+  val isPollingCloudPull: Boolean = false,
+
+  /** Chat state. */
+  val cloudChatMessage: String = "",
+  val cloudChatState: FlowExecutionState = FlowExecutionState.IDLE,
+  val cloudChatStateMessage: String = "",
+  val cloudChatReply: String = "",
+  val cloudChatSpeechInputMimeType: String = "",
+  val cloudChatSpeechInputData: String = "",
+  val cloudChatRequestTts: Boolean = false,
+  val cloudChatTtsOutputMimeType: String = "",
+  val cloudChatTtsVoice: String = "",
+  val cloudChatSpeechTranscript: String = "",
+  val cloudChatTtsBase64Audio: String = "",
+  val cloudChatTtsMimeType: String = "",
+  val isSendingCloudChat: Boolean = false,
+
   /** The history of text inputs entered by the user. */
   val textInputHistory: List<String> = listOf(),
   val configValuesUpdateTrigger: Long = 0L,
@@ -180,14 +241,25 @@ constructor(
   private val dataStoreRepository: DataStoreRepository,
   private val lifecycleProvider: AppLifecycleProvider,
   private val customTasks: Set<@JvmSuppressWildcards CustomTask>,
+  private val cloudControlPlaneClient: CloudControlPlaneClient,
   @ApplicationContext private val context: Context,
 ) : ViewModel() {
-  private val externalFilesDir = context.getExternalFilesDir(null)
+  private val externalFilesDir: File = context.getExternalFilesDir(null) ?: context.filesDir
   protected val _uiState = MutableStateFlow(createEmptyUiState())
   val uiState = _uiState.asStateFlow()
 
+  private val modelLifecycleMutexes = mutableMapOf<String, Mutex>()
+  private fun modelMutex(modelName: String): Mutex =
+    synchronized(modelLifecycleMutexes) { modelLifecycleMutexes.getOrPut(modelName) { Mutex() } }
+
   val authService = AuthorizationService(context)
   var curAccessToken: String = ""
+
+  private fun stringResource(resourceId: Int): String = context.getString(resourceId)
+
+  private fun stringResource(resourceId: Int, vararg args: Any): String {
+    return context.getString(resourceId, *args)
+  }
 
   override fun onCleared() {
     authService.dispose()
@@ -248,6 +320,656 @@ constructor(
     }
   }
 
+  fun setControlPlaneBaseUrl(baseUrl: String) {
+    _uiState.update {
+      it.copy(
+        controlPlaneBaseUrl = baseUrl,
+        providerRegistryState = FlowExecutionState.IDLE,
+        providerRegistryMessage = "",
+        providerOptions = listOf(),
+        selectedProvider = "",
+        cloudModelListState = FlowExecutionState.IDLE,
+        cloudModelListMessage = "",
+        cloudModelOptions = listOf(),
+        selectedCloudModel = "",
+        modelSourceOptions = listOf(),
+        cloudPullState = FlowExecutionState.IDLE,
+        cloudPullMessage = "",
+        cloudPullJobId = null,
+        cloudChatState = FlowExecutionState.IDLE,
+        cloudChatStateMessage = "",
+        cloudChatReply = "",
+      )
+    }
+  }
+
+  fun setSelectedProvider(provider: String) {
+    _uiState.update {
+      it.copy(
+        selectedProvider = provider,
+        cloudModelListState = FlowExecutionState.IDLE,
+        cloudModelListMessage = "",
+        cloudModelOptions = listOf(),
+        selectedCloudModel = "",
+        cloudPullMessage = "",
+        cloudPullState = FlowExecutionState.IDLE,
+      )
+    }
+  }
+
+  fun setCloudModelSource(source: String) {
+    _uiState.update {
+      it.copy(
+        cloudModelSource = resolveModelSourceSelection(
+          candidate = source,
+          options = it.modelSourceOptions,
+          fallback = it.cloudModelSource,
+          canonicalFallback = VertuRuntimeConfig.controlPlaneDefaultModelSource,
+        )
+      )
+    }
+  }
+
+  fun setProviderApiKey(apiKey: String) {
+    _uiState.update { it.copy(providerApiKey = apiKey) }
+  }
+
+  fun setProviderBaseUrl(baseUrl: String) {
+    _uiState.update { it.copy(providerBaseUrl = baseUrl) }
+  }
+
+  fun setSelectedCloudModel(model: String) {
+    _uiState.update { it.copy(selectedCloudModel = model) }
+  }
+
+  fun setCloudPullModelRef(modelRef: String) {
+    _uiState.update { it.copy(cloudPullModelRef = modelRef) }
+  }
+
+  fun setCloudPullSource(source: String) {
+    _uiState.update {
+      it.copy(
+        cloudPullSource = resolveModelSourceSelection(
+          candidate = source,
+          options = it.modelSourceOptions,
+          fallback = it.cloudModelSource,
+          canonicalFallback = VertuRuntimeConfig.controlPlaneDefaultModelSource,
+        )
+      )
+    }
+  }
+
+  fun setCloudPullTimeoutMs(timeoutMs: String) {
+    _uiState.update { it.copy(cloudPullTimeoutMsText = timeoutMs) }
+  }
+
+  fun setCloudPullForce(force: Boolean) {
+    _uiState.update { it.copy(cloudPullForce = force) }
+  }
+
+  fun setCloudChatMessage(message: String) {
+    _uiState.update { it.copy(cloudChatMessage = message) }
+  }
+
+  fun clearCloudChatReply() {
+    _uiState.update {
+      it.copy(
+        cloudChatReply = "",
+        cloudChatSpeechTranscript = "",
+        cloudChatTtsBase64Audio = "",
+        cloudChatTtsMimeType = "",
+        cloudChatStateMessage = "",
+      )
+    }
+  }
+
+  fun setCloudChatSpeechInputMimeType(mimeType: String) {
+    _uiState.update { it.copy(cloudChatSpeechInputMimeType = mimeType) }
+  }
+
+  fun setCloudChatSpeechInputData(data: String) {
+    _uiState.update { it.copy(cloudChatSpeechInputData = data) }
+  }
+
+  fun setCloudChatRequestTts(requestTts: Boolean) {
+    _uiState.update { it.copy(cloudChatRequestTts = requestTts) }
+  }
+
+  fun setCloudChatTtsOutputMimeType(mimeType: String) {
+    _uiState.update { it.copy(cloudChatTtsOutputMimeType = mimeType) }
+  }
+
+  fun setCloudChatTtsVoice(voice: String) {
+    _uiState.update { it.copy(cloudChatTtsVoice = voice) }
+  }
+
+  fun loadCloudProviders() {
+    val baseUrl = resolveControlPlaneBaseUrl()
+    val currentState = uiState.value.providerRegistryState
+    if (currentState == FlowExecutionState.LOADING) return
+
+    viewModelScope.launch(Dispatchers.IO) {
+      _uiState.update {
+        it.copy(
+          isLoadingProviderRegistry = true,
+          providerRegistryState = FlowExecutionState.LOADING,
+          providerRegistryMessage = stringResource(R.string.cloud_provider_registry_loading),
+        )
+      }
+
+      try {
+        val sourceEnvelope = runCatching {
+          cloudControlPlaneClient.fetchModelSources(baseUrl = baseUrl)
+        }.getOrNull()
+        val sourceOptions =
+          sourceEnvelope?.data?.sources
+            ?.mapNotNull { source ->
+              val sourceId = source.id.trim()
+              if (sourceId.isBlank()) {
+                return@mapNotNull null
+              }
+              source.copy(
+                id = sourceId,
+                displayName = source.displayName.trim(),
+                aliases = source.aliases
+                  .map(String::trim)
+                  .filter(String::isNotBlank)
+                  .distinct(),
+              )
+            }
+            ?.filter { it.id.isNotBlank() }
+            ?.distinctBy { it.id.lowercase() }
+            ?.sortedBy { it.displayName.lowercase() }
+            .orEmpty()
+        val sourceFallbackId =
+          sourceEnvelope?.data?.defaultSource?.trim().orEmpty()
+        val canonicalSourceFallback = resolveModelSourceSelection(
+          candidate = sourceFallbackId,
+          options = sourceOptions,
+          fallback = _uiState.value.cloudModelSource,
+          canonicalFallback = VertuRuntimeConfig.controlPlaneDefaultModelSource,
+        )
+
+        val providers = cloudControlPlaneClient.fetchConfiguredProviderOptions(baseUrl = baseUrl)
+          .distinct()
+          .sorted()
+        val selectedProvider = providers.firstOrNull().orEmpty()
+        _uiState.update {
+            val resolvedModelSource =
+            resolveModelSourceSelection(
+              candidate = it.cloudModelSource,
+              options = sourceOptions,
+              fallback = canonicalSourceFallback,
+              canonicalFallback = VertuRuntimeConfig.controlPlaneDefaultModelSource,
+            )
+          val resolvedPullSource =
+            resolveModelSourceSelection(
+              candidate = it.cloudPullSource,
+              options = sourceOptions,
+              fallback = resolvedModelSource,
+              canonicalFallback = canonicalSourceFallback,
+            )
+          it.copy(
+            isLoadingProviderRegistry = false,
+            providerOptions = providers,
+            selectedProvider = selectedProvider.ifBlank { it.selectedProvider },
+            modelSourceOptions = sourceOptions,
+            cloudModelSource = resolvedModelSource,
+            cloudPullSource = resolvedPullSource,
+            providerRegistryState = if (providers.isEmpty()) FlowExecutionState.EMPTY else FlowExecutionState.SUCCESS,
+            providerRegistryMessage =
+              if (providers.isEmpty()) {
+                stringResource(R.string.cloud_provider_registry_empty)
+              } else {
+                stringResource(R.string.cloud_provider_registry_loaded, providers.size)
+              },
+          )
+        }
+      } catch (error: Exception) {
+        Log.w(TAG, "Failed to load cloud providers", error)
+        _uiState.update {
+          it.copy(
+            isLoadingProviderRegistry = false,
+            providerRegistryState = FlowExecutionState.ERROR_RETRYABLE,
+            providerRegistryMessage = error.message.orEmpty().ifBlank {
+              stringResource(R.string.cloud_provider_registry_load_failed)
+            },
+          )
+        }
+      }
+    }
+  }
+
+  fun loadCloudModelsForSelectedProvider() {
+    val provider = uiState.value.selectedProvider.trim()
+    val baseUrl = resolveControlPlaneBaseUrl()
+    if (provider.isEmpty()) {
+      _uiState.update {
+        it.copy(
+          cloudModelListState = FlowExecutionState.ERROR_NON_RETRYABLE,
+          cloudModelListMessage = stringResource(R.string.cloud_models_select_provider_before_loading),
+        )
+      }
+      return
+    }
+
+    val currentState = uiState.value.cloudModelListState
+    if (currentState == FlowExecutionState.LOADING) return
+
+    viewModelScope.launch(Dispatchers.IO) {
+      _uiState.update {
+        it.copy(
+          isLoadingCloudModels = true,
+          cloudModelListState = FlowExecutionState.LOADING,
+          cloudModelListMessage = stringResource(R.string.cloud_models_loading_for_provider, provider),
+        )
+      }
+
+      try {
+        val result: CloudModelOptionsResult =
+          cloudControlPlaneClient.fetchProviderModels(
+            baseUrl = baseUrl,
+            provider = provider,
+            selectedModel = uiState.value.selectedCloudModel.ifBlank { null },
+            apiKey = uiState.value.providerApiKey.ifBlank { null },
+            providerBaseUrl = uiState.value.providerBaseUrl.ifBlank { null },
+          )
+        val selectedModel =
+          result.selectedModel?.ifBlank { null }
+            ?: uiState.value.selectedCloudModel.ifBlank { null }
+            ?: result.models.firstOrNull()
+            ?: ""
+        _uiState.update {
+          it.copy(
+            isLoadingCloudModels = false,
+            cloudModelOptions = result.models.distinct().sorted(),
+            selectedCloudModel = selectedModel,
+            cloudModelListState = result.state,
+            cloudModelListMessage = if (result.message.isNotBlank()) {
+              result.message
+            } else if (result.models.isEmpty()) {
+              stringResource(R.string.cloud_models_none_for_provider)
+            } else {
+              stringResource(R.string.cloud_models_loaded, result.models.size)
+            },
+          )
+        }
+      } catch (error: Exception) {
+        Log.w(TAG, "Failed to load cloud models", error)
+        _uiState.update {
+          it.copy(
+            isLoadingCloudModels = false,
+            cloudModelListState = FlowExecutionState.ERROR_RETRYABLE,
+            cloudModelOptions = listOf(),
+            selectedCloudModel = "",
+            cloudModelListMessage = error.message.orEmpty().ifBlank {
+              stringResource(R.string.cloud_models_load_failed)
+            },
+          )
+        }
+      }
+    }
+  }
+
+  fun pullCloudModel() {
+    val state = uiState.value
+    val requestModelRef = state.cloudPullModelRef.ifBlank { state.selectedCloudModel }.trim()
+    if (requestModelRef.isEmpty()) {
+      _uiState.update {
+        it.copy(
+          cloudPullState = FlowExecutionState.ERROR_NON_RETRYABLE,
+          cloudPullMessage = stringResource(R.string.cloud_pull_model_ref_required),
+          isSubmittingCloudPull = false,
+        )
+      }
+      return
+    }
+
+    val provider = state.selectedProvider.trim()
+    if (provider.isEmpty()) {
+      _uiState.update {
+        it.copy(
+          cloudPullState = FlowExecutionState.ERROR_NON_RETRYABLE,
+          cloudPullMessage = stringResource(R.string.cloud_pull_provider_required),
+          isSubmittingCloudPull = false,
+        )
+      }
+      return
+    }
+
+    val baseUrl = resolveControlPlaneBaseUrl()
+    val modelSource =
+      resolveModelSourceSelection(
+        candidate = state.cloudPullSource,
+        options = state.modelSourceOptions,
+        fallback = state.cloudModelSource,
+        canonicalFallback = VertuRuntimeConfig.controlPlaneDefaultModelSource,
+      )
+    val timeoutMs =
+      parsePositiveInt(state.cloudPullTimeoutMsText)
+        ?: VertuRuntimeConfig.controlPlaneDefaultPullTimeoutMs
+    val request = CloudModelPullRequest(
+      modelRef = requestModelRef,
+      source = modelSource,
+      platform = null,
+      force = state.cloudPullForce,
+      timeoutMs = timeoutMs,
+      correlationId = null,
+    )
+
+    viewModelScope.launch(Dispatchers.IO) {
+      _uiState.update {
+        it.copy(
+          isSubmittingCloudPull = true,
+          isPollingCloudPull = false,
+          cloudPullState = FlowExecutionState.LOADING,
+          cloudPullMessage = stringResource(R.string.cloud_pull_submit_request),
+          cloudPullJobId = null,
+        )
+      }
+      try {
+        val envelope = cloudControlPlaneClient.startModelPull(baseUrl = baseUrl, request = request)
+        applyCloudPullEnvelope(envelope)
+
+        val terminalState = envelope.state
+        val jobId = envelope.jobId
+        if (!isTerminalCloudState(terminalState) && !jobId.isNullOrBlank()) {
+          pollCloudModelPull(baseUrl = baseUrl, jobId = jobId)
+        } else {
+          _uiState.update {
+            it.copy(isSubmittingCloudPull = false, isPollingCloudPull = false)
+          }
+        }
+      } catch (error: Exception) {
+        Log.w(TAG, "Model pull request failed", error)
+        _uiState.update {
+          it.copy(
+            isSubmittingCloudPull = false,
+            isPollingCloudPull = false,
+            cloudPullState = FlowExecutionState.ERROR_RETRYABLE,
+            cloudPullMessage = error.message.orEmpty().ifBlank {
+              stringResource(R.string.cloud_pull_submit_failed)
+            },
+          )
+        }
+      }
+    }
+  }
+
+  private fun pollCloudModelPull(baseUrl: String, jobId: String) {
+    viewModelScope.launch(Dispatchers.IO) {
+      var attempts = 0
+      _uiState.update {
+        it.copy(
+          isPollingCloudPull = true,
+          cloudPullState = FlowExecutionState.LOADING,
+          cloudPullMessage = stringResource(R.string.cloud_pull_poll_job, jobId),
+        )
+      }
+
+      var state = uiState.value.cloudPullState
+      while (attempts < VertuRuntimeConfig.controlPlanePollAttempts && !isTerminalCloudState(state)) {
+        if (attempts > 0) {
+          delay(VertuRuntimeConfig.controlPlanePollIntervalMs.toLong())
+        }
+        attempts++
+        try {
+          val envelope = cloudControlPlaneClient.pollModelPull(baseUrl = baseUrl, jobId = jobId)
+          applyCloudPullEnvelope(envelope)
+          state = envelope.state
+        } catch (error: Exception) {
+          Log.w(TAG, "Cloud model pull polling failed", error)
+          _uiState.update {
+            it.copy(
+              isPollingCloudPull = false,
+              isSubmittingCloudPull = false,
+              cloudPullState = FlowExecutionState.ERROR_RETRYABLE,
+              cloudPullMessage =
+                error.message.orEmpty().ifBlank {
+                  stringResource(R.string.cloud_pull_polling_failed)
+                },
+            )
+          }
+          return@launch
+        }
+      }
+
+      if (!isTerminalCloudState(state)) {
+        _uiState.update {
+          it.copy(
+            isPollingCloudPull = false,
+            isSubmittingCloudPull = false,
+            cloudPullState = FlowExecutionState.ERROR_RETRYABLE,
+            cloudPullMessage = stringResource(R.string.cloud_pull_timeout),
+          )
+        }
+        return@launch
+      }
+      _uiState.update {
+        it.copy(isPollingCloudPull = false, isSubmittingCloudPull = false)
+      }
+    }
+  }
+
+  fun sendCloudChat() {
+    val state = uiState.value
+    val message = state.cloudChatMessage.trim()
+    val speechInputMimeType = state.cloudChatSpeechInputMimeType.trim()
+    val speechInputData = state.cloudChatSpeechInputData.trim()
+    val hasSpeechInput = speechInputMimeType.isNotBlank() && speechInputData.isNotBlank()
+
+    if (message.isBlank() && !hasSpeechInput) {
+      _uiState.update {
+        it.copy(
+          cloudChatState = FlowExecutionState.ERROR_NON_RETRYABLE,
+          cloudChatStateMessage = stringResource(R.string.cloud_chat_input_missing),
+          isSendingCloudChat = false,
+        )
+      }
+      return
+    }
+
+    val provider = state.selectedProvider.trim()
+    if (provider.isBlank()) {
+      _uiState.update {
+        it.copy(
+          cloudChatState = FlowExecutionState.ERROR_NON_RETRYABLE,
+          cloudChatStateMessage = stringResource(R.string.cloud_chat_provider_required),
+          isSendingCloudChat = false,
+        )
+      }
+      return
+    }
+
+    val model = state.selectedCloudModel.trim()
+    if (model.isBlank()) {
+      _uiState.update {
+        it.copy(
+          cloudChatState = FlowExecutionState.ERROR_NON_RETRYABLE,
+          cloudChatStateMessage = stringResource(R.string.cloud_chat_model_required),
+          isSendingCloudChat = false,
+        )
+      }
+      return
+    }
+
+    val speechInput = if (hasSpeechInput) {
+      CloudChatAudioPayload(mimeType = speechInputMimeType, data = speechInputData)
+    } else {
+      null
+    }
+    val request = CloudChatRequest(
+      provider = provider,
+      model = model,
+      message = message.ifBlank { null },
+      speechInput = speechInput,
+      requestTts = state.cloudChatRequestTts,
+      ttsOutputMimeType = state.cloudChatTtsOutputMimeType.trim().ifBlank { null },
+      ttsVoice = state.cloudChatTtsVoice.trim().ifBlank { null },
+      apiKey = state.providerApiKey.ifBlank { null },
+      baseUrl = state.providerBaseUrl.ifBlank { null },
+    )
+
+    viewModelScope.launch(Dispatchers.IO) {
+      _uiState.update {
+        it.copy(
+          isSendingCloudChat = true,
+          cloudChatState = FlowExecutionState.LOADING,
+          cloudChatStateMessage = stringResource(R.string.cloud_chat_sending),
+        )
+      }
+      try {
+        val envelope = cloudControlPlaneClient.sendChat(
+          baseUrl = resolveControlPlaneBaseUrl(),
+          request = request,
+        )
+        applyCloudChatEnvelope(envelope)
+      } catch (error: Exception) {
+        Log.w(TAG, "Cloud chat request failed", error)
+        _uiState.update {
+          it.copy(
+            isSendingCloudChat = false,
+            cloudChatState = FlowExecutionState.ERROR_RETRYABLE,
+            cloudChatStateMessage =
+              error.message.orEmpty().ifBlank { stringResource(R.string.cloud_chat_send_failed) },
+          )
+        }
+      }
+    }
+  }
+
+  private fun applyCloudPullEnvelope(envelope: CloudModelPullEnvelope) {
+    val data = envelope.data
+    val message =
+      when {
+        data != null -> {
+          val requested = data.requestedModelRef
+          val normalized = data.normalizedModelRef
+          val status = data.status.ifBlank { stringResource(R.string.cloud_model_status_unknown) }
+          val elapsed = if (data.elapsedMs > 0) stringResource(R.string.cloud_pull_elapsed_ms, data.elapsedMs) else ""
+          val artifact = data.artifactPath?.ifBlank { null }?.let { stringResource(R.string.cloud_pull_artifact, it) } ?: ""
+          stringResource(R.string.cloud_pull_job_status, requested, normalized, status, elapsed, artifact)
+        }
+        envelope.mismatches.isNotEmpty() -> envelope.mismatches.joinToString(" ")
+        envelope.error != null -> envelope.error.reason
+        else -> stringResource(R.string.cloud_pull_status_updated)
+      }
+    _uiState.update {
+      it.copy(
+        cloudPullJobId = envelope.jobId ?: it.cloudPullJobId,
+        cloudPullState = envelope.state,
+        cloudPullMessage = message,
+      )
+    }
+  }
+
+  private fun applyCloudChatEnvelope(envelope: CloudChatEnvelope) {
+    val message =
+      if (envelope.mismatches.isNotEmpty()) {
+        envelope.mismatches.joinToString(" ")
+      } else if (envelope.data == null) {
+        stringResource(R.string.cloud_chat_no_response)
+      } else {
+        envelope.data.reply
+      }
+    _uiState.update {
+      it.copy(
+        isSendingCloudChat = false,
+        cloudChatState = envelope.state,
+        cloudChatStateMessage = message,
+        cloudChatReply = envelope.data?.reply.orEmpty(),
+        cloudChatSpeechTranscript = envelope.data?.speech?.transcript.orEmpty(),
+        cloudChatTtsBase64Audio = envelope.data?.tts?.data.orEmpty(),
+        cloudChatTtsMimeType = envelope.data?.tts?.mimeType.orEmpty(),
+      )
+    }
+  }
+
+  private fun isTerminalCloudState(state: FlowExecutionState): Boolean {
+    return when (state) {
+      FlowExecutionState.SUCCESS,
+      FlowExecutionState.ERROR_RETRYABLE,
+      FlowExecutionState.ERROR_NON_RETRYABLE,
+      FlowExecutionState.UNAUTHORIZED -> true
+
+      FlowExecutionState.IDLE,
+      FlowExecutionState.LOADING,
+      FlowExecutionState.EMPTY -> false
+    }
+  }
+
+  private fun parsePositiveInt(rawTimeout: String): Int? {
+    val timeout = rawTimeout.trim().toLongOrNull()
+    return timeout
+      ?.takeIf { it in 1..Int.MAX_VALUE.toLong() }
+      ?.toInt()
+  }
+
+  private fun resolveModelSourceSelection(
+    candidate: String,
+    options: List<CloudModelSourceDescriptor>,
+    fallback: String,
+    canonicalFallback: String,
+  ): String {
+    val trimmedCandidate = candidate.trim()
+    if (!trimmedCandidate.isBlank()) {
+      val direct = resolveKnownModelSourceId(trimmedCandidate, options)
+      if (!direct.isNullOrBlank()) {
+        return direct
+      }
+    }
+
+    val trimmedFallback = fallback.trim()
+    if (!trimmedFallback.isBlank()) {
+      val fallbackMatch = resolveKnownModelSourceId(trimmedFallback, options)
+      if (!fallbackMatch.isNullOrBlank()) {
+        return fallbackMatch
+      }
+    }
+
+    val trimmedCanonicalFallback = canonicalFallback.trim()
+    if (!trimmedCanonicalFallback.isBlank()) {
+      val canonicalMatch = resolveKnownModelSourceId(trimmedCanonicalFallback, options)
+      if (!canonicalMatch.isNullOrBlank()) {
+        return canonicalMatch
+      }
+    }
+
+    if (options.isEmpty()) {
+      return trimmedCanonicalFallback.ifBlank { trimmedFallback }
+    }
+
+    return options.firstOrNull { it.id.isNotBlank() }?.id?.trim().orEmpty()
+      .ifBlank { trimmedCanonicalFallback.ifBlank { trimmedFallback } }
+  }
+
+  private fun resolveKnownModelSourceId(
+    rawSource: String,
+    options: List<CloudModelSourceDescriptor>,
+  ): String? {
+    val trimmedSource = rawSource.trim()
+    if (trimmedSource.isBlank()) {
+      return null
+    }
+    val direct = options.firstOrNull { option ->
+      option.id.equals(trimmedSource, ignoreCase = true)
+    }?.id
+    if (!direct.isNullOrBlank()) {
+      return direct
+    }
+    val alias = options.firstOrNull { option ->
+      option.aliases.any { alias -> alias.equals(trimmedSource, ignoreCase = true) }
+    }?.id
+    if (!alias.isNullOrBlank()) {
+      return alias
+    }
+    return null
+  }
+
+  private fun resolveControlPlaneBaseUrl(): String {
+    return uiState.value.controlPlaneBaseUrl.ifBlank { VertuRuntimeConfig.controlPlaneBaseUrl }
+  }
+
   fun updateConfigValuesUpdateTrigger() {
     _uiState.update { _uiState.value.copy(configValuesUpdateTrigger = System.currentTimeMillis()) }
   }
@@ -303,12 +1025,14 @@ constructor(
       curModelDownloadStatus.remove(model.name)
 
       // Update data store.
-      val importedModels = dataStoreRepository.readImportedModels().toMutableList()
-      val importedModelIndex = importedModels.indexOfFirst { it.fileName == model.name }
-      if (importedModelIndex >= 0) {
-        importedModels.removeAt(importedModelIndex)
+      runBlocking {
+        val importedModels = dataStoreRepository.readImportedModels().toMutableList()
+        val importedModelIndex = importedModels.indexOfFirst { it.fileName == model.name }
+        if (importedModelIndex >= 0) {
+          importedModels.removeAt(importedModelIndex)
+        }
+        dataStoreRepository.saveImportedModels(importedModels = importedModels)
       }
-      dataStoreRepository.saveImportedModels(importedModels = importedModels)
     }
     val newUiState =
       uiState.value.copy(
@@ -321,68 +1045,78 @@ constructor(
 
   fun initializeModel(context: Context, task: Task, model: Model, force: Boolean = false) {
     viewModelScope.launch(Dispatchers.Default) {
-      // Skip if initialized already.
-      if (
-        !force &&
-          uiState.value.modelInitializationStatus[model.name]?.status ==
-            ModelInitializationStatusType.INITIALIZED
-      ) {
-        Log.d(TAG, "Model '${model.name}' has been initialized. Skipping.")
-        return@launch
-      }
-
-      // Skip if initialization is in progress.
-      if (model.initializing) {
-        model.cleanUpAfterInit = false
-        Log.d(TAG, "Model '${model.name}' is being initialized. Skipping.")
-        return@launch
-      }
-
-      // Clean up.
-      cleanupModel(context = context, task = task, model = model)
-
-      // Start initialization.
-      Log.d(TAG, "Initializing model '${model.name}'...")
-      model.initializing = true
-      updateModelInitializationStatus(
-        model = model,
-        status = ModelInitializationStatusType.INITIALIZING,
-      )
-
-      val onDone: (error: String) -> Unit = { error ->
-        model.initializing = false
-        if (model.instance != null) {
-          Log.d(TAG, "Model '${model.name}' initialized successfully")
-          updateModelInitializationStatus(
-            model = model,
-            status = ModelInitializationStatusType.INITIALIZED,
-          )
-          if (model.cleanUpAfterInit) {
-            Log.d(TAG, "Model '${model.name}' needs cleaning up after init.")
-            cleanupModel(context = context, task = task, model = model)
-          }
-        } else if (error.isNotEmpty()) {
-          Log.d(TAG, "Model '${model.name}' failed to initialize")
-          updateModelInitializationStatus(
-            model = model,
-            status = ModelInitializationStatusType.ERROR,
-            error = error,
-          )
+      modelMutex(model.name).withLock {
+        if (
+          !force &&
+            uiState.value.modelInitializationStatus[model.name]?.status ==
+              ModelInitializationStatusType.INITIALIZED
+        ) {
+          Log.d(TAG, "Model '${model.name}' has been initialized. Skipping.")
+          return@withLock
         }
-      }
 
-      // Call the model initialization function.
-      getCustomTaskByTaskId(id = task.id)
-        ?.initializeModelFn(
-          context = context,
-          coroutineScope = viewModelScope,
+        if (model.initializing) {
+          model.cleanUpAfterInit = false
+          Log.d(TAG, "Model '${model.name}' is being initialized. Skipping.")
+          return@withLock
+        }
+
+        cleanupModelLocked(context = context, task = task, model = model)
+
+        Log.d(TAG, "Initializing model '${model.name}'...")
+        model.initializing = true
+        updateModelInitializationStatus(
           model = model,
-          onDone = onDone,
+          status = ModelInitializationStatusType.INITIALIZING,
         )
+
+        val onDone: (error: String) -> Unit = { error ->
+          model.initializing = false
+          if (model.instance != null) {
+            Log.d(TAG, "Model '${model.name}' initialized successfully")
+            updateModelInitializationStatus(
+              model = model,
+              status = ModelInitializationStatusType.INITIALIZED,
+            )
+            if (model.cleanUpAfterInit) {
+              Log.d(TAG, "Model '${model.name}' needs cleaning up after init.")
+              cleanupModel(context = context, task = task, model = model)
+            }
+          } else if (error.isNotEmpty()) {
+            Log.d(TAG, "Model '${model.name}' failed to initialize")
+            updateModelInitializationStatus(
+              model = model,
+              status = ModelInitializationStatusType.ERROR,
+              error = error,
+            )
+          }
+        }
+
+        getCustomTaskByTaskId(id = task.id)
+          ?.initializeModelFn(
+            context = context,
+            coroutineScope = viewModelScope,
+            model = model,
+            onDone = onDone,
+          )
+      }
     }
   }
 
   fun cleanupModel(context: Context, task: Task, model: Model, onDone: () -> Unit = {}) {
+    viewModelScope.launch(Dispatchers.Default) {
+      modelMutex(model.name).withLock {
+        cleanupModelLocked(context, task, model, onDone)
+      }
+    }
+  }
+
+  private fun cleanupModelLocked(
+    context: Context,
+    task: Task,
+    model: Model,
+    onDone: () -> Unit = {},
+  ) {
     if (model.instance != null) {
       model.cleanUpAfterInit = false
       Log.d(TAG, "Cleaning up model '${model.name}'...")
@@ -404,8 +1138,6 @@ constructor(
           onDone = onDone,
         )
     } else {
-      // When model is being initialized and we are trying to clean it up at same time, we mark it
-      // to clean up and it will be cleaned up after initialization is done.
       if (model.initializing) {
         Log.d(
           TAG,
@@ -449,7 +1181,8 @@ constructor(
         newHistory.removeAt(newHistory.size - 1)
       }
       _uiState.update { _uiState.value.copy(textInputHistory = newHistory) }
-      dataStoreRepository.saveTextInputHistory(_uiState.value.textInputHistory)
+      val history = _uiState.value.textInputHistory
+      viewModelScope.launch { dataStoreRepository.saveTextInputHistory(history) }
     } else {
       promoteTextInputHistoryItem(text)
     }
@@ -462,7 +1195,8 @@ constructor(
       newHistory.removeAt(index)
       newHistory.add(0, text)
       _uiState.update { _uiState.value.copy(textInputHistory = newHistory) }
-      dataStoreRepository.saveTextInputHistory(_uiState.value.textInputHistory)
+      val history = _uiState.value.textInputHistory
+      viewModelScope.launch { dataStoreRepository.saveTextInputHistory(history) }
     }
   }
 
@@ -472,21 +1206,22 @@ constructor(
       val newHistory = uiState.value.textInputHistory.toMutableList()
       newHistory.removeAt(index)
       _uiState.update { _uiState.value.copy(textInputHistory = newHistory) }
-      dataStoreRepository.saveTextInputHistory(_uiState.value.textInputHistory)
+      val history = _uiState.value.textInputHistory
+      viewModelScope.launch { dataStoreRepository.saveTextInputHistory(history) }
     }
   }
 
   fun clearTextInputHistory() {
     _uiState.update { _uiState.value.copy(textInputHistory = mutableListOf()) }
-    dataStoreRepository.saveTextInputHistory(_uiState.value.textInputHistory)
+    viewModelScope.launch { dataStoreRepository.saveTextInputHistory(emptyList()) }
   }
 
   fun readThemeOverride(): Theme {
-    return dataStoreRepository.readTheme()
+    return runBlocking { dataStoreRepository.readTheme() }
   }
 
   fun saveThemeOverride(theme: Theme) {
-    dataStoreRepository.saveTheme(theme = theme)
+    viewModelScope.launch { dataStoreRepository.saveTheme(theme = theme) }
   }
 
   fun getModelUrlResponse(model: Model, accessToken: String? = null): Int {
@@ -574,21 +1309,23 @@ constructor(
     }
 
     // Add to data store.
-    val importedModels = dataStoreRepository.readImportedModels().toMutableList()
-    val importedModelIndex = importedModels.indexOfFirst { info.fileName == it.fileName }
-    if (importedModelIndex >= 0) {
-      Log.d(TAG, "duplicated imported model found in data store. Removing it first")
-      importedModels.removeAt(importedModelIndex)
+    runBlocking {
+      val importedModels = dataStoreRepository.readImportedModels().toMutableList()
+      val importedModelIndex = importedModels.indexOfFirst { info.fileName == it.fileName }
+      if (importedModelIndex >= 0) {
+        Log.d(TAG, "duplicated imported model found in data store. Removing it first")
+        importedModels.removeAt(importedModelIndex)
+      }
+      importedModels.add(info)
+      dataStoreRepository.saveImportedModels(importedModels = importedModels)
     }
-    importedModels.add(info)
-    dataStoreRepository.saveImportedModels(importedModels = importedModels)
   }
 
   fun getTokenStatusAndData(): TokenStatusAndData {
     // Try to load token data from DataStore.
     var tokenStatus = TokenStatus.NOT_STORED
     Log.d(TAG, "Reading token data from data store...")
-    val tokenData = dataStoreRepository.readAccessTokenData()
+    val tokenData = runBlocking { dataStoreRepository.readAccessTokenData() }
 
     // Token exists.
     if (tokenData != null && tokenData.accessToken.isNotEmpty()) {
@@ -703,15 +1440,17 @@ constructor(
   }
 
   fun saveAccessToken(accessToken: String, refreshToken: String, expiresAt: Long) {
-    dataStoreRepository.saveAccessTokenData(
-      accessToken = accessToken,
-      refreshToken = refreshToken,
-      expiresAt = expiresAt,
-    )
+    viewModelScope.launch {
+      dataStoreRepository.saveAccessTokenData(
+        accessToken = accessToken,
+        refreshToken = refreshToken,
+        expiresAt = expiresAt,
+      )
+    }
   }
 
   fun clearAccessToken() {
-    dataStoreRepository.clearAccessTokenData()
+    viewModelScope.launch { dataStoreRepository.clearAccessTokenData() }
   }
 
   private fun processPendingDownloads() {
@@ -774,10 +1513,27 @@ constructor(
         }
 
         if (modelAllowlist == null) {
+          if (!isNetworkAvailable(context)) {
+            Log.w(TAG, "No network available. Trying to load model allowlist from disk.")
+            modelAllowlist = readModelAllowlistFromDisk()
+            if (modelAllowlist == null) {
+              _uiState.update {
+                uiState.value.copy(
+                  loadingModelAllowlistError = "You are offline. Connect to the internet to load the model list."
+                )
+              }
+              return@launch
+            }
+          }
+        } else {
           // Load from github.
           val url = getAllowlistUrl()
           Log.d(TAG, "Loading model allowlist from internet. Url: $url")
-          val data = getJsonResponse<ModelAllowlist>(url = url)
+          val data = getJsonResponseWithRetry<ModelAllowlist>(
+            url = url,
+            maxAttempts = 3,
+            initialDelayMs = 1000,
+          )
           modelAllowlist = data?.jsonObj
 
           if (modelAllowlist == null) {
@@ -791,7 +1547,7 @@ constructor(
 
         if (modelAllowlist == null) {
           _uiState.update {
-            uiState.value.copy(loadingModelAllowlistError = "Failed to load model list")
+            uiState.value.copy(loadingModelAllowlistError = stringResource(R.string.model_allowlist_load_failed))
           }
           return@launch
         }
@@ -850,7 +1606,13 @@ constructor(
         // Process pending downloads.
         processPendingDownloads()
       } catch (e: Exception) {
-        e.printStackTrace()
+        Log.e(TAG, "Failed to load model allowlist", e)
+        _uiState.update {
+          it.copy(
+            loadingModelAllowlist = false,
+            loadingModelAllowlistError = stringResource(R.string.model_allowlist_load_failed),
+          )
+        }
       }
     }
   }
@@ -871,6 +1633,14 @@ constructor(
 
   fun setAppInForeground(foreground: Boolean) {
     lifecycleProvider.isAppInForeground = foreground
+  }
+
+  private fun isNetworkAvailable(context: Context): Boolean {
+    val connectivityManager =
+      context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val network = connectivityManager.activeNetwork ?: return false
+    val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+    return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
   }
 
   private fun saveModelAllowlistToDisk(modelAllowlistContent: String) {
@@ -946,8 +1716,8 @@ constructor(
       }
     }
 
-    // Load imported models.
-    for (importedModel in dataStoreRepository.readImportedModels()) {
+        // Load imported models.
+    for (importedModel in runBlocking { dataStoreRepository.readImportedModels() }) {
       Log.d(TAG, "stored imported model: $importedModel")
 
       // Create model.
@@ -982,7 +1752,7 @@ constructor(
         )
     }
 
-    val textInputHistory = dataStoreRepository.readTextInputHistory()
+    val textInputHistory = runBlocking { dataStoreRepository.readTextInputHistory() }
     Log.d(TAG, "text input history: $textInputHistory")
 
     Log.d(TAG, "model download status: $modelDownloadStatus")
@@ -1152,12 +1922,8 @@ constructor(
   }
 
   private fun isFileInExternalFilesDir(fileName: String): Boolean {
-    if (externalFilesDir != null) {
-      val file = File(externalFilesDir, fileName)
-      return file.exists()
-    } else {
-      return false
-    }
+    val file = File(externalFilesDir, fileName)
+    return file.exists()
   }
 
   private fun isFileInDataLocalTmpDir(fileName: String): Boolean {
@@ -1177,11 +1943,10 @@ constructor(
    * prefix.
    */
   private fun deleteFilesFromImportDir(fileName: String) {
-    val dir = context.getExternalFilesDir(null) ?: return
-
-    val prefixAbsolutePath = "${context.getExternalFilesDir(null)}${File.separator}$fileName"
+    val dir = File(externalFilesDir, IMPORTS_DIR)
+    val prefixAbsolutePath = "${externalFilesDir.absolutePath}${File.separator}$fileName"
     val filesToDelete =
-      File(dir, IMPORTS_DIR).listFiles { dirFile, name ->
+      dir.listFiles { dirFile, name ->
         File(dirFile, name).absolutePath.startsWith(prefixAbsolutePath)
       } ?: arrayOf()
     for (file in filesToDelete) {
@@ -1233,5 +1998,5 @@ constructor(
 private fun getAllowlistUrl(): String {
   val version = BuildConfig.VERSION_NAME.replace(".", "_")
 
-  return "$ALLOWLIST_BASE_URL/${version}.json"
+  return "${VertuRuntimeConfig.modelAllowlistBaseUrl}/${version}.json"
 }

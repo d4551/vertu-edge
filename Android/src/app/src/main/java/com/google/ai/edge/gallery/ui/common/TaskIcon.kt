@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -78,7 +79,7 @@ fun TaskIcon(
     val brush = linearGradient(colors = getTaskBgGradientColors(task = task))
     Image(
       painter = getTaskIconBgShape(task = task),
-      contentDescription = null,
+      contentDescription = stringResource(R.string.cd_task_icon),
       modifier =
         Modifier.fillMaxSize()
           .graphicsLayer(
@@ -106,7 +107,7 @@ fun TaskIcon(
         Modifier.size(width * 0.55f)
           .graphicsLayer { alpha = iconAnimationProgress }
           .scale(iconAnimationProgress),
-      contentDescription = null,
+      contentDescription = stringResource(R.string.cd_task_icon),
     )
   }
 }

@@ -1,0 +1,28 @@
+{
+  "defaultSource": "huggingface",
+  "sources": [
+    {
+      "id": "huggingface",
+      "displayName": "Hugging Face",
+      "description": "Remote model repositories hosted on huggingface.co.",
+      "modelRefPlaceholder": "owner/repo or huggingface.co/owner/repo",
+      "modelRefHint": "Format: owner/repo or huggingface.co/owner/repo",
+      "modelRefValidation": "huggingface",
+      "canonicalHost": "huggingface.co",
+      "ramalamaTransportPrefix": "huggingface://",
+      "aliases": ["hf"],
+      "enforceAllowlist": true
+    },
+    {
+      "id": "ollama",
+      "displayName": "Ollama",
+      "description": "Local or remote Ollama model tags.",
+      "modelRefPlaceholder": "llama3.2",
+      "modelRefHint": "Use an Ollama tag, for example llama3.2 or mistral:7b.",
+      "modelRefValidation": "opaque",
+      "ramalamaTransportPrefix": "ollama://",
+      "aliases": [],
+      "enforceAllowlist": false
+    }
+  ]
+}

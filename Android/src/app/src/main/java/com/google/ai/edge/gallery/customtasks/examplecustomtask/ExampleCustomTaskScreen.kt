@@ -16,7 +16,7 @@
 
 package com.google.ai.edge.gallery.customtasks.examplecustomtask
 
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -48,8 +48,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.data.ConfigKey
 import com.google.ai.edge.gallery.data.NumberSliderConfig
 import com.google.ai.edge.gallery.data.ValueType
@@ -63,9 +65,14 @@ data class ExampleCustomTaskModelInstance(val content: String)
  * These keys are used to uniquely identify and retrieve values for configurable parameters within a
  * model.
  */
-val EXAMPLE_CUSTOM_TASK_CONFIG_KEY_FONT_SIZE = ConfigKey(id = "font_size", label = "Font size")
+val EXAMPLE_CUSTOM_TASK_CONFIG_KEY_FONT_SIZE =
+  ConfigKey(id = "font_size", label = "Font size", labelResId = com.google.ai.edge.gallery.R.string.config_font_size)
 val EXAMPLE_CUSTOM_TASK_CONFIG_KEY_MAX_CHAR_COUNT =
-  ConfigKey(id = "max_char_count", label = "Max character count")
+  ConfigKey(
+    id = "max_char_count",
+    label = "Max character count",
+    labelResId = com.google.ai.edge.gallery.R.string.config_max_char_count,
+  )
 
 /**
  * A list of configurable parameters for the `ExampleCustomTask`'s models.
@@ -132,7 +139,7 @@ fun ExampleCustomTaskScreen(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(16.dp),
       ) {
-        Text("Text color: ")
+        Text(stringResource(R.string.text_color))
         for (color in colors) {
           Box(
             modifier =
@@ -145,7 +152,7 @@ fun ExampleCustomTaskScreen(
               Icon(
                 Icons.Outlined.Check,
                 tint = MaterialTheme.colorScheme.onPrimary,
-                contentDescription = null,
+                contentDescription = stringResource(R.string.cd_check),
                 modifier = Modifier.size(12.dp),
               )
             }

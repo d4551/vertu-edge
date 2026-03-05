@@ -31,6 +31,9 @@ import com.google.ai.edge.gallery.data.DataStoreRepository
 import com.google.ai.edge.gallery.data.DefaultDataStoreRepository
 import com.google.ai.edge.gallery.data.DefaultDownloadRepository
 import com.google.ai.edge.gallery.data.DownloadRepository
+import com.google.ai.edge.gallery.data.CloudControlPlaneClient
+import com.google.ai.edge.gallery.data.HttpControlPlaneClient
+import com.google.ai.edge.gallery.data.HuggingFaceModelManager
 import com.google.ai.edge.gallery.proto.BenchmarkResults
 import com.google.ai.edge.gallery.proto.CutoutCollection
 import com.google.ai.edge.gallery.proto.Settings
@@ -158,5 +161,19 @@ internal object AppModule {
     lifecycleProvider: AppLifecycleProvider,
   ): DownloadRepository {
     return DefaultDownloadRepository(context, lifecycleProvider)
+  }
+
+  // Provides HuggingFaceModelManager
+  @Provides
+  @Singleton
+  fun provideHuggingFaceModelManager(): HuggingFaceModelManager {
+    return HuggingFaceModelManager()
+  }
+
+  // Provides control-plane client for cloud AI/provider endpoints.
+  @Provides
+  @Singleton
+  fun provideCloudControlPlaneClient(): CloudControlPlaneClient {
+    return HttpControlPlaneClient()
   }
 }

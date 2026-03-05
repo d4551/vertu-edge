@@ -34,7 +34,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.ui.theme.bodySmallNarrow
 
 /** Composable function to display an action button below a chat message. */
@@ -61,7 +63,7 @@ fun MessageActionButton(
   ) {
     Icon(
       icon,
-      contentDescription = null,
+      contentDescription = stringResource(R.string.cd_action_button),
       modifier = Modifier.size(16.dp).offset(x = 6.dp).alpha(alpha),
     )
     Text(

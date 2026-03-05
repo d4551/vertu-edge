@@ -48,7 +48,6 @@ import com.google.ai.edge.gallery.data.AppBarAction
 import com.google.ai.edge.gallery.data.AppBarActionType
 
 /** The top app bar. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GalleryTopAppBar(
   title: String,
@@ -57,6 +56,7 @@ fun GalleryTopAppBar(
   rightAction: AppBarAction? = null,
   scrollBehavior: TopAppBarScrollBehavior? = null,
   subtitle: String = "",
+  showLogo: Boolean = false,
 ) {
   val titleColor = MaterialTheme.colorScheme.onSurface
   CenterAlignedTopAppBar(
@@ -66,11 +66,11 @@ fun GalleryTopAppBar(
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-          if (title == stringResource(R.string.app_name)) {
+          if (showLogo) {
             Icon(
               painterResource(R.drawable.logo),
               modifier = Modifier.size(20.dp),
-              contentDescription = null,
+              contentDescription = stringResource(R.string.cd_app_logo),
               tint = Color.Unspecified,
             )
           }
@@ -133,7 +133,7 @@ fun GalleryTopAppBar(
 
         // Click a button to navigate up.
         AppBarActionType.NAVIGATE_UP -> {
-          TextButton(onClick = rightAction.actionFn) { Text("Done") }
+          TextButton(onClick = rightAction.actionFn) { Text(stringResource(R.string.done)) }
         }
 
         else -> {}

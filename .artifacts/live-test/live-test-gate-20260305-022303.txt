@@ -1,0 +1,146 @@
+Live Test Gate Report
+Generated at: 2026-03-04T18:23:03Z
+Repository: /Users/brandondonnelly/Downloads/vertu-edge
+
+==> control-plane typecheck
+$ bunx tsc --noEmit
+PASS: control-plane typecheck
+
+==> control-plane tests
+bun test v1.3.10 (30e609e0)
+
+test/http-model-build-routes.test.ts:
+(pass) HTTP model/build capability routes > POST /api/models/pull returns loading envelope for AutoGLM request [23.35ms]
+(pass) HTTP model/build capability routes > GET /api/models/sources returns registry envelope [3.06ms]
+(pass) HTTP model/build capability routes > POST /api/models/pull preserves non-huggingface source [3.29ms]
+(pass) HTTP model/build capability routes > POST /api/models/pull malformed ref renders non-retryable envelope [2.93ms]
+(pass) HTTP model/build capability routes > GET /api/models/pull/:jobId returns terminal envelope fields [2.85ms]
+(pass) HTTP model/build capability routes > POST /api/apps/build android request returns loading envelope [3.14ms]
+(pass) HTTP model/build capability routes > POST /api/apps/build iOS on non-mac renders explicit unsupported state
+(pass) HTTP model/build capability routes > GET /api/apps/build/:jobId returns terminal envelope with artifact and elapsed [2.20ms]
+(pass) HTTP model/build capability routes > POST /api/flows/validate validates YAML without execution [4.25ms]
+(pass) HTTP model/build capability routes > POST /api/flows/validate accepts flow execution policy overrides [3.19ms]
+(pass) HTTP model/build capability routes > POST /api/flows/validate surfaces parse failures deterministically [2.87ms]
+(pass) HTTP model/build capability routes > POST /api/flows/validate/automation reports unsupported commands [4.80ms]
+(pass) HTTP model/build capability routes > POST /api/flows/validate/automation with ios target reports explicit readiness [26.20ms]
+(pass) HTTP model/build capability routes > POST /api/flows/run renders action and attempt telemetry [4.43ms]
+(pass) HTTP model/build capability routes > POST /api/flows/trigger forwards request overrides to runFlow [3.16ms]
+(pass) HTTP model/build capability routes > GET /api/flows/capabilities renders capability matrix [4.40ms]
+(pass) HTTP model/build capability routes > POST /api/flows/runs returns loading flow run job with controls [2.20ms]
+(pass) HTTP model/build capability routes > GET /api/flows/runs/:runId returns terminal run envelope [2.25ms]
+(pass) HTTP model/build capability routes > POST /api/flows/runs/:runId/cancel and pause/resume routes render states [5.45ms]
+(pass) HTTP model/build capability routes > POST /api/flows/runs/:runId/replay-step renders response [2.52ms]
+(pass) HTTP model/build capability routes > GET /api/flows/runs/:runId/logs streams SSE events [3.79ms]
+(pass) HTTP model/build capability routes > POST /api/apps/build/:jobId cancel/resume and logs are available [5.34ms]
+(pass) HTTP model/build capability routes > POST /api/ai/providers/validate returns provider validation summary [3.33ms]
+(pass) HTTP model/build capability routes > GET /api/ai/models without provider returns provider selection prompt [2.42ms]
+(pass) HTTP model/build capability routes > GET /api/ai/models requires API key for providers that require credentials [1.89ms]
+(pass) HTTP model/build capability routes > GET /api/ai/models retains selected model when provider listing succeeds [3.86ms]
+(pass) HTTP model/build capability routes > POST /api/ai/keys requires key for providers that require credentials [2.54ms]
+(pass) HTTP model/build capability routes > POST /api/ai/keys validates provider base URL format [1.98ms]
+(pass) HTTP model/build capability routes > POST /api/ai/keys stores API key for reuse by provider actions [5.47ms]
+(pass) HTTP model/build capability routes > GET /api/ucp/discover with format=json returns machine-readable success payload [2.76ms]
+(pass) HTTP model/build capability routes > GET /api/ucp/discover with Accept: application/json returns structured error payload [2.51ms]
+(pass) HTTP model/build capability routes > GET /api/ucp/discover defaults to dashboard HTML when JSON is not requested [2.06ms]
+(pass) HTTP model/build capability routes > POST /api/ai/chat requires explicit model selection [3.46ms]
+(pass) HTTP model/build capability routes > POST /api/ai/chat returns unauthorized when provider key is missing [2.78ms]
+
+test/ai-providers-huggingface.test.ts:
+(pass) Hugging Face provider behavior > listProviderModels reads OpenAI-style /v1/models payload for Hugging Face [0.45ms]
+(pass) Hugging Face provider behavior > listProviderModels retries with /v1 prefix when Hugging Face base URL omits it [0.20ms]
+(pass) Hugging Face provider behavior > listProviderModels parses top-level model array payload [0.10ms]
+(pass) Hugging Face provider behavior > chatCompletion uses Hugging Face OpenAI-compatible chat endpoint and parses assistant content [0.37ms]
+
+test/ui-state-model-build.test.ts:
+(pass) UI state machine: model pull + app build > dashboard renders idle state containers for model/build cards [5.38ms]
+(pass) UI state machine: model pull + app build > model pull route renders loading state [2.27ms]
+(pass) UI state machine: model pull + app build > model pull route renders retryable-error and non-retryable-error states [4.54ms]
+(pass) UI state machine: model pull + app build > app build route renders loading/success/retryable/non-retryable states [11.27ms]
+
+test/ucp-discovery.test.ts:
+(pass) discoverBusinessCapabilities returns manifest for valid services-based manifest [0.35ms]
+(pass) discoverBusinessCapabilities returns manifest for transports-only manifest [0.11ms]
+(pass) discoverBusinessCapabilities returns manifest with signing_keys [0.11ms]
+(pass) discoverBusinessCapabilities returns null for invalid URL [0.03ms]
+(pass) discoverBusinessCapabilities returns null for 404 response [0.07ms]
+(pass) discoverBusinessCapabilities returns null for non-JSON content-type [0.07ms]
+(pass) discoverBusinessCapabilities returns null for invalid JSON [0.07ms]
+(pass) discoverBusinessCapabilities returns null for invalid manifest structure [0.05ms]
+(pass) discoverBusinessCapabilities returns null on fetch rejection [0.05ms]
+(pass) discoverBusinessCapabilities normalizes URL to .well-known/ucp [0.03ms]
+
+test/model-build-jobs.test.ts:
+(pass) toRamalamaModelRef converts huggingface.co refs to ramalama format
+(pass) startModelPullJob accepts AutoGLM model refs and returns loading envelope [6193.88ms]
+(pass) startModelPullJob rejects malformed refs as non-retryable [0.33ms]
+(pass) startAppBuildJob returns explicit unsupported envelope for iOS on non-mac hosts [0.09ms]
+(pass) startAppBuildJob android path returns loading envelope when Java is available [7052.26ms]
+
+test/artifact-metadata.test.ts:
+(pass) artifact metadata parsing > parses complete JSON metadata and verifies integrity [2.24ms]
+(pass) artifact metadata parsing > returns null when output fields are missing [0.47ms]
+(pass) artifact metadata parsing > flags integrity mismatch when file cannot be found [0.05ms]
+(pass) artifact metadata parsing > flags checksum mismatch when sha256 does not match [0.65ms]
+
+test/flow-capabilities.test.ts:
+(pass) parseMaestroYaml parses canonical object flow payload [0.07ms]
+(pass) parseMaestroYaml supports scalar parity commands [0.08ms]
+(pass) parseMaestroYaml rejects unsupported commands with typed command index [0.26ms]
+(pass) RPADriver returns deterministic unsupported command failure details [0.54ms]
+(pass) RPADriver records retryable attempts and successful recovery in action telemetry [252.57ms]
+(pass) RPADriver stops retrying after non-retryable command failure [0.84ms]
+(pass) getFlowTargetCapabilityProbe returns android target for android [0.06ms]
+(pass) Flow android vs osx target capability supports differ for tapOn [0.22ms]
+(pass) iOS capability probe returns explicit non-retryable readiness failure [17.88ms]
+
+test/contracts.test.ts:
+(pass) validateModelRef accepts huggingface owner/repo inputs [0.61ms]
+(pass) validateModelRef rejects malformed references [0.06ms]
+(pass) validateModelRefWithSource accepts non-huggingface providers [0.02ms]
+(pass) validateModelRefWithPolicy supports host-normalized sources [0.02ms]
+(pass) validateModelRefWithSource rejects unsafe values for non-huggingface sources [0.02ms]
+(pass) Build platform helpers are strict [0.04ms]
+(pass) Supported flow command registry matches parser command detection [0.04ms]
+
+ 77 pass
+ 0 fail
+ 288 expect() calls
+Ran 77 tests across 8 files. [13.84s]
+PASS: control-plane tests
+
+==> capability audit
+CAPABILITY_AUDIT checks passed: 20 capabilities, 15 documented commands, 15 registry commands.
+PASS: capability audit
+
+==> code practice audit
+Code practice audit checks passed.
+PASS: code practice audit
+
+==> version freshness policy (offline)
+Version freshness checks passed (mode=offline).
+PASS: version freshness policy (offline)
+
+==> tooling typecheck
+$ tsc --noEmit
+PASS: tooling typecheck
+
+==> tooling tests
+bun test v1.3.10 (30e609e0)
+
+test/flow-cli.test.ts:
+VALID: /Users/brandondonnelly/Downloads/vertu-edge/contracts/fixtures/contact-flow.yaml
+COMPILED: /Users/brandondonnelly/Downloads/vertu-edge/contracts/fixtures/contact-flow.yaml.compiled.json
+(pass) validate and compile flow fixture [65.60ms]
+VALID: /Users/brandondonnelly/Downloads/vertu-edge/model_allowlist.json
+(pass) validate model manifest fixture [16.35ms]
+
+ 2 pass
+ 0 fail
+ 2 expect() calls
+Ran 2 tests across 1 file. [143.00ms]
+PASS: tooling tests
+
+Summary
+- Total checks: 7
+- Failed checks: 0
+- Result: PASS

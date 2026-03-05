@@ -39,7 +39,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.google.ai.edge.gallery.R
 
 @Composable
 fun SingleSelectButton(
@@ -50,6 +52,15 @@ fun SingleSelectButton(
   var selectedOption by remember { mutableStateOf(config.defaultOption) }
 
   LaunchedEffect(config) { selectedOption = config.defaultOption }
+
+  val displayLabel = config.labelResId?.let { stringResource(it) } ?: config.label
+  val selectedOptionIndex = config.options.indexOf(selectedOption)
+  val selectedOptionDisplay =
+    if (config.optionLabelResIds.isNotEmpty() && selectedOptionIndex in config.optionLabelResIds.indices) {
+      stringResource(config.optionLabelResIds[selectedOptionIndex])
+    } else {
+      selectedOption
+    }
 
   Box {
     Row(
@@ -62,15 +73,20 @@ fun SingleSelectButton(
           .padding(vertical = 4.dp, horizontal = 6.dp)
           .padding(start = 8.dp),
     ) {
-      Text("${config.label}: $selectedOption", style = MaterialTheme.typography.labelLarge)
-      Icon(Icons.Rounded.ArrowDropDown, contentDescription = null)
+      Text("$displayLabel: $selectedOptionDisplay", style = MaterialTheme.typography.labelLarge)
+      Icon(Icons.Rounded.ArrowDropDown, contentDescription = stringResource(R.string.cd_dropdown))
     }
 
     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-      // Options
-      for (option in config.options) {
+      for ((index, option) in config.options.withIndex()) {
+        val optionDisplay =
+          if (config.optionLabelResIds.size > index) {
+            stringResource(config.optionLabelResIds[index])
+          } else {
+            option
+          }
         DropdownMenuItem(
-          text = { Text(option) },
+          text = { Text(optionDisplay) },
           onClick = {
             selectedOption = option
             showMenu = false

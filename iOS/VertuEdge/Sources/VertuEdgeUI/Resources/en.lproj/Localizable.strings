@@ -1,0 +1,76 @@
+/* FlowRunner localizable UI text. */
+"flow_runner_title" = "Flow Runner";
+"flow_runner_confirm_flow_execution" = "Confirm Flow Execution";
+"flow_runner_run_flow" = "Run flow";
+"flow_runner_cancel" = "Cancel";
+"flow_runner_subtitle" = "Run an iOS flow to validate control-plane behavior and cloud features.";
+"flow_runner_app_id" = "App ID";
+"flow_runner_app_id_accessibility_label" = "Flow app identifier";
+"flow_runner_app_id_accessibility_hint" = "Type the app package identifier to run.";
+"flow_runner_run_sample_flow" = "Run sample flow";
+"flow_runner_running_flow" = "Running sample flow...";
+"flow_runner_run_sample_flow_hint" = "Starts a one-step flow using the app ID.";
+"flow_runner_result_accessibility" = "Flow result: %@";
+"flow_runner_idle" = "Idle";
+
+"flow_runner_cloud_tools" = "Cloud tools";
+"flow_runner_control_plane_title" = "Control-plane";
+"flow_runner_control_plane_base_url" = "Control-plane base URL";
+"flow_runner_load_configured_providers" = "Load configured providers";
+"flow_runner_refresh_model_list" = "Load providers’ model list";
+"flow_runner_retry" = "Retry";
+"flow_runner_ai_provider" = "Configured provider";
+"flow_runner_provider_api_key" = "Provider API key (optional)";
+"flow_runner_provider_base_url_optional" = "Provider base URL (optional)";
+"flow_runner_model_list" = "Cloud models";
+"flow_runner_preferred_source" = "Model source";
+"flow_runner_model_label" = "Model";
+"flow_runner_load_models" = "Load models";
+"flow_runner_model_list_refresh_needed" = "Select a model after loading the provider.";
+"flow_runner_provider_not_loaded" = "Provider registry not loaded.";
+"flow_runner_model_list_not_loaded" = "Model list not loaded.";
+"flow_runner_pull_not_started" = "Model pull not started.";
+"flow_runner_chat_ready" = "Cloud chat ready.";
+"flow_runner_request_failed" = "Unable to complete the request. Check your control-plane configuration and network, then try again.";
+"flow_runner_invalid_control_plane_base_url" = "Invalid control-plane base URL.";
+"flow_runner_provider_loading" = "Loading provider registry...";
+"flow_runner_provider_empty" = "No providers available for this control-plane.";
+"flow_runner_provider_loaded" = "Loaded %1$d providers.";
+
+"flow_runner_models_select_provider_before_loading" = "Select a provider before loading models.";
+"flow_runner_models_loading_for_provider" = "Loading models for %@...";
+"flow_runner_models_none_for_provider" = "No models available for provider.";
+
+"flow_runner_model_pull_title" = "Model pull job";
+"flow_runner_pull_model_source" = "Model source";
+"flow_runner_pull_timeout_ms" = "Timeout ms (optional)";
+"flow_runner_pull_force" = "Force pull";
+"flow_runner_start_model_pull" = "Start pull";
+"flow_runner_pull_job_id" = "Job ID: %@";
+"flow_runner_pull_model_ref_required" = "Enter a model reference to pull.";
+"flow_runner_pull_submit_request" = "Submitting model pull job...";
+"flow_runner_pull_job_timeout" = "Model pull job did not complete within polling window.";
+"flow_runner_pull_job_status" = "Job %@ -> %@ (%@)%@%@";
+"flow_runner_pull_elapsed_ms" = ", elapsed %1$dms";
+"flow_runner_pull_artifact" = " artifact: %@";
+"flow_runner_pull_no_payload" = "No pull payload available.";
+
+"flow_runner_chat" = "Chat";
+"flow_runner_chat_speech_input" = "Speech input";
+"flow_runner_chat_speech_input_mime_type" = "Speech input MIME type";
+"flow_runner_chat_request_tts" = "Request TTS response";
+"flow_runner_chat_tts_output_mime_type" = "TTS output MIME type";
+"flow_runner_chat_tts_voice" = "TTS voice";
+"flow_runner_chat_speech_transcript" = "Speech transcript";
+"flow_runner_chat_tts_output" = "TTS output";
+"flow_runner_chat_tts_mime_type" = "MIME: %@";
+"flow_runner_send" = "Send";
+"flow_runner_chat_model_first" = "Select a model before sending chat.";
+"flow_runner_chat_reply" = "Reply";
+"flow_runner_chat_input_missing" = "Enter chat message or provide speech input.";
+"flow_runner_chat_provider_required" = "Select a provider first.";
+"flow_runner_chat_model_required" = "Select a model first.";
+"flow_runner_chat_sending" = "Sending chat request...";
+
+"flow_runner_model_reference_placeholder" = "Model reference";
+"flow_runner_safety_blocked" = "Blocked by safety policy: %@";

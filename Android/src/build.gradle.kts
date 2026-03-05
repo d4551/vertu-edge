@@ -14,11 +14,29 @@
  * limitations under the License.
  */
 
+// Load vertu.local.properties into project properties (for VERTU_* and HF OAuth config).
+// Values are available to all subprojects via providers.gradleProperty().
+val vertuLocalPropsFile = rootProject.file("vertu.local.properties")
+if (vertuLocalPropsFile.exists()) {
+  val props = java.util.Properties()
+  vertuLocalPropsFile.reader().use { props.load(it) }
+  subprojects {
+    props.forEach { (k, v) ->
+      if (k is String && v is String && k.isNotBlank() && !k.trimStart().startsWith("#")) {
+        project.ext.set(k, v)
+      }
+    }
+  }
+}
+
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 plugins {
   alias(libs.plugins.android.application) apply false
+  alias(libs.plugins.android.library) apply false
   alias(libs.plugins.google.services) apply false
   alias(libs.plugins.kotlin.android) apply false
+  alias(libs.plugins.kotlin.multiplatform) apply false
+  alias(libs.plugins.kotlin.serialization) apply false
   alias(libs.plugins.kotlin.compose) apply false
   alias(libs.plugins.hilt.application) apply false
 }

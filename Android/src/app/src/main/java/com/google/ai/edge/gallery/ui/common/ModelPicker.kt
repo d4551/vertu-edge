@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -77,13 +78,13 @@ fun ModelPicker(
       horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
       Icon(
-        task.icon ?: ImageVector.vectorResource(task.iconVectorResourceId!!),
+        task.icon ?: task.iconVectorResourceId?.let { ImageVector.vectorResource(it) } ?: Icons.Default.Apps,
         tint = getTaskIconColor(task = task),
         modifier = Modifier.size(16.dp),
-        contentDescription = null,
+        contentDescription = stringResource(R.string.cd_model_picker),
       )
       Text(
-        "${task.label} models",
+        "${if (task.labelResId != null) stringResource(task.labelResId) else task.label} models",
         modifier = Modifier.fillMaxWidth(),
         style = MaterialTheme.typography.titleMedium,
         color = getTaskIconColor(task = task),

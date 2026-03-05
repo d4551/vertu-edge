@@ -40,6 +40,7 @@ import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.MessageCallback
 import com.google.ai.edge.litertlm.SamplerConfig
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.util.concurrent.CancellationException
 
 private const val TAG = "AGLlmChatModelHelper"
@@ -87,6 +88,12 @@ object LlmChatModelHelper {
     Log.d(TAG, "Preferred backend: $preferredBackend")
 
     val modelPath = model.getPath(context = context)
+    val modelFile = File(modelPath)
+    if (!modelFile.exists()) {
+      onDone("Model file does not exist at path: ${modelFile.absolutePath}")
+      return
+    }
+
     val engineConfig =
       EngineConfig(
         modelPath = modelPath,
@@ -96,7 +103,7 @@ object LlmChatModelHelper {
         maxNumTokens = maxTokens,
         cacheDir =
           if (modelPath.startsWith("/data/local/tmp"))
-            context.getExternalFilesDir(null)?.absolutePath
+            (context.getExternalFilesDir(null) ?: context.filesDir).absolutePath
           else null,
       )
 

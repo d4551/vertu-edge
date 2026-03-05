@@ -16,7 +16,10 @@
 
 package com.google.ai.edge.gallery.data
 
-enum class Accelerator(val label: String) {
-  CPU(label = "CPU"),
-  GPU(label = "GPU"),
+import androidx.annotation.StringRes
+import com.google.ai.edge.gallery.R
+
+enum class Accelerator(val label: String, @StringRes val labelResId: Int) {
+  CPU(label = "CPU", labelResId = R.string.accelerator_cpu),
+  GPU(label = "GPU", labelResId = R.string.accelerator_gpu),
 }

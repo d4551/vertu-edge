@@ -44,6 +44,10 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "AI Edge Gallery"
+rootProject.name = "Vertu Edge"
 
 include(":app")
+include(":vertu-core")
+project(":vertu-core").projectDir = file("../../vertu-core")
+include(":vertu-android-rpa")
+project(":vertu-android-rpa").projectDir = file("../../vertu-android-rpa")

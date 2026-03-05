@@ -1,0 +1,29 @@
+# Copy this file to Android/src/vertu.local.properties and load as Gradle properties.
+
+VERTU_APP_NAME=Vertu Edge
+VERTU_BRAND_TAGLINE=Concierge-grade mobile automation
+VERTU_APPLICATION_ID=com.vertu.edge
+
+# Deep link scheme for app navigation (e.g., com.vertu.edge://model/task/modelName)
+VERTU_DEEP_LINK_SCHEME=com.vertu.edge
+
+# Hugging Face OAuth
+VERTU_HF_CLIENT_ID=
+
+# OAuth redirect scheme for HuggingFace AppAuth (must NOT contain dots)
+# IMPORTANT: This must match the scheme registered with HuggingFace OAuth.
+# If you change VERTU_DEEP_LINK_SCHEME, update this too (remove dots).
+# Example: com.vertu.edge -> comvertuedge
+VERTU_HF_REDIRECT_SCHEME=comvertuedge
+VERTU_HF_REDIRECT_URI=comvertuedge://callback
+
+# Control-plane runtime overrides
+VERTU_CONTROL_PLANE_BASE_URL=http://127.0.0.1:3310
+VERTU_CONTROL_PLANE_CONNECT_TIMEOUT_MS=15000
+VERTU_CONTROL_PLANE_READ_TIMEOUT_MS=30000
+VERTU_CONTROL_PLANE_POLL_INTERVAL_MS=900
+VERTU_CONTROL_PLANE_POLL_ATTEMPTS=180
+VERTU_CONTROL_PLANE_DEFAULT_PULL_TIMEOUT_MS=120000
+# Optional: control-plane model source override when no source registry default is available.
+VERTU_CONTROL_PLANE_DEFAULT_MODEL_SOURCE=
+VERTU_CONTROL_PLANE_MODEL_STATE_ID_PREFIX=model-state

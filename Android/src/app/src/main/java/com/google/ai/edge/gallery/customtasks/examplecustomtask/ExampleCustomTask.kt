@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.runtime.Composable
 import com.google.ai.edge.gallery.customtasks.common.CustomTask
 import com.google.ai.edge.gallery.customtasks.common.CustomTaskData
+import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.data.CategoryInfo
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.Task
@@ -62,7 +63,8 @@ class ExampleCustomTask @Inject constructor() : CustomTask {
     Task(
       id = "example_custom_task",
       label = "Model Viewer",
-      category = CategoryInfo(id = "example", label = "Example"),
+      labelResId = R.string.task_model_viewer,
+      category = CategoryInfo(id = "example", labelStringRes = R.string.category_example),
       icon = Icons.Outlined.TextFields,
       description =
         "This example task demonstrates a custom task that reads and displays the content of a " +

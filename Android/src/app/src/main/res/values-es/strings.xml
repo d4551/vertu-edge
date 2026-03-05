@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="all">Todos</string>
+  <string name="app_name">Vertu Edge</string>
+  <string name="baseline">Referencia</string>
+  <string name="basic_info">Información básica</string>
+  <string name="benchmark">Benchmark</string>
+  <string name="benchmark_model">Modelo de benchmark</string>
+  <string name="benchmark_results">Resultados del benchmark</string>
+  <string name="benchmark_no_results">Sin resultados de benchmark</string>
+  <string name="best_overall">Mejor general</string>
+  <string name="cancel">Cancelar</string>
+  <string name="close">Cerrar</string>
+  <string name="clear">Borrar</string>
+  <string name="copy">Copiar</string>
+  <string name="create">Crear</string>
+  <string name="delete">Eliminar</string>
+  <string name="disabled">Deshabilitado</string>
+  <string name="dismiss">Descartar</string>
+  <string name="done">Listo</string>
+  <string name="download">Descargar</string>
+  <string name="resume_download">Reanudar descarga</string>
+  <string name="edit">Editar</string>
+  <string name="error">Error</string>
+  <string name="expand_all">Expandir todo</string>
+  <string name="collapse_all">Contraer todo</string>
+  <string name="learn_more">Más información</string>
+  <string name="listening">Escuchando...</string>
+  <string name="loading_model_list">Cargando lista de modelos...</string>
+  <string name="model_is_initializing_msg">Inicializando modelo…</string>
+  <string name="model_manager">Gestor de modelos</string>
+  <string name="model_not_downloaded_msg">Modelo aún no descargado</string>
+  <string name="ok">Aceptar</string>
+  <string name="preview">Vista previa</string>
+  <string name="retry">Reintentar</string>
+  <string name="send">Enviar</string>
+  <string name="reset">Restablecer</string>
+  <string name="results">Resultados</string>
+  <string name="run_benchmark">Ejecutar benchmark</string>
+  <string name="running">ejecutando</string>
+  <string name="select_model">Seleccionar modelo</string>
+  <string name="settings">Ajustes</string>
+  <string name="share">Compartir</string>
+  <string name="try_it">Probarlo</string>
+  <string name="undo">Deshacer</string>
+  <string name="unknown_error">Error desconocido</string>
+  <string name="view_results">Ver resultados</string>
+  <string name="warming_up">calentando…</string>
+
+  <!-- Settings -->
+  <string name="theme">Tema</string>
+  <string name="theme_auto">Automático</string>
+  <string name="theme_light">Claro</string>
+  <string name="theme_dark">Oscuro</string>
+
+  <!-- Download -->
+  <string name="unzipping">Descomprimiendo…</string>
+  <string name="downloading_model">Descargando modelo</string>
+
+  <!-- Model import -->
+  <string name="import_model">Importar</string>
+  <string name="import_model_title">Importar modelo</string>
+  <string name="failed_to_import">Error al importar</string>
+  <string name="model_imported_successfully">Modelo importado correctamente</string>
+
+  <!-- Tasks -->
+  <string name="task_ai_chat">Chat IA</string>
+  <string name="task_prompt_lab">Laboratorio de prompts</string>
+
+  <!-- Config labels -->
+  <string name="config_max_tokens">Tokens máximos</string>
+  <string name="config_temperature">Temperatura</string>
+  <string name="config_name">Nombre</string>
+  <string name="config_accelerator">Acelerador</string>
+  <string name="config_model_type">Tipo de modelo</string>
+
+  <!-- Accelerator -->
+  <string name="accelerator_cpu">CPU</string>
+  <string name="accelerator_gpu">GPU</string>
+</resources>

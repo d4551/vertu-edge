@@ -40,8 +40,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.ai.edge.gallery.R
 
 @Composable
 fun SquareDrawerItem(
@@ -71,7 +73,7 @@ fun SquareDrawerItem(
     ) {
       Icon(
         icon,
-        contentDescription = null,
+        contentDescription = stringResource(R.string.cd_drawer_item),
         modifier =
           Modifier.size(40.dp)
             .then(

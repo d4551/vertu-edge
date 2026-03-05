@@ -79,6 +79,7 @@ import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.ModelDownloadStatus
 import com.google.ai.edge.gallery.data.ModelDownloadStatusType
 import com.google.ai.edge.gallery.data.Task
+import com.google.ai.edge.gallery.common.VertuRuntimeConfig
 import com.google.ai.edge.gallery.ui.common.tos.GemmaTermsOfUseDialog
 import com.google.ai.edge.gallery.ui.common.tos.TosViewModel
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
@@ -99,17 +100,17 @@ private const val SYSTEM_RESERVED_MEMORY_IN_BYTES = 3 * (1L shl 30)
  * If the button is enabled and not currently checking the token, it initiates a coroutine to handle
  * the download logic.
  *
- * For models requiring download first, it specifically addresses HuggingFace URLs by first checking
+ * For models requiring download first, it checks source-protected URLs by first checking
  * if authentication is necessary. If no authentication is needed, the download starts directly.
  * Otherwise, it checks the current token status; if the token is invalid or expired, a token
  * exchange flow is initiated. If a valid token exists, it attempts to access the download URL. If
  * access is granted, the download begins; if not, a new token is requested.
  *
- * For non-HuggingFace URLs that need downloading, the download starts directly.
+ * For non-protected URLs that need downloading, the download starts directly.
  *
  * If the model doesn't need to be downloaded first, the provided `onClicked` callback is executed.
  *
- * Additionally, for gated HuggingFace models, if accessing the model after token exchange results
+ * Additionally, for gated registries, if accessing the model after token exchange results
  * in a forbidden error, a modal bottom sheet is displayed, prompting the user to acknowledge the
  * user agreement by opening it in a custom tab. Upon closing the tab, the download process is
  * retried.
@@ -145,13 +146,16 @@ fun DownloadAndTryButton(
 
   val needToDownloadFirst =
     (downloadStatus?.status == ModelDownloadStatusType.NOT_DOWNLOADED ||
-      downloadStatus?.status == ModelDownloadStatusType.FAILED) &&
+      downloadStatus?.status == ModelDownloadStatusType.FAILED ||
+      downloadStatus?.status == ModelDownloadStatusType.PARTIALLY_DOWNLOADED) &&
       model.localFileRelativeDirPathOverride.isEmpty()
   val inProgress = downloadStatus?.status == ModelDownloadStatusType.IN_PROGRESS
   val downloadSucceeded = downloadStatus?.status == ModelDownloadStatusType.SUCCEEDED
   val isPartiallyDownloaded = downloadStatus?.status == ModelDownloadStatusType.PARTIALLY_DOWNLOADED
+  // isPartiallyDownloaded is excluded here: a partial download shows the "Resume Download" button
+  // rather than the progress bar, so the bar only appears once a new download is actively running.
   val showDownloadProgress =
-    !downloadSucceeded && (downloadStarted || checkingToken || inProgress || isPartiallyDownloaded)
+    !downloadSucceeded && (downloadStarted || checkingToken || inProgress)
   var curDownloadProgress: Float
 
   // A launcher for requesting notification permission.
@@ -247,21 +251,21 @@ fun DownloadAndTryButton(
 
   // Launches a coroutine to handle the initial check and potential authentication flow
   // before downloading the model. It checks if the model needs to be downloaded first,
-  // handles HuggingFace URLs by verifying the need for authentication, and initiates
+  // handles protected registry URLs by verifying the need for authentication, and initiates
   // the token exchange process if required or proceeds with the download if no auth is needed
   // or a valid token is available.
   val handleClickButton = {
     scope.launch(Dispatchers.IO) {
       if (needToDownloadFirst) {
         downloadStarted = true
-        // For HuggingFace urls
-        if (model.url.startsWith("https://huggingface.co")) {
+        // For configured registries that require token-aware access checks.
+        if (model.url.startsWith(VertuRuntimeConfig.modelDownloadBaseUrl)) {
           checkingToken = true
 
           // Check if the url needs auth.
           Log.d(
             TAG,
-            "Model '${model.name}' is from HuggingFace. Checking if the url needs auth to download",
+            "Model '${model.name}' is from a protected registry. Checking if the url needs auth to download",
           )
           val firstResponseCode = modelManagerViewModel.getModelUrlResponse(model = model)
           if (firstResponseCode == HttpURLConnection.HTTP_OK) {
@@ -320,7 +324,7 @@ fun DownloadAndTryButton(
         else {
           Log.d(
             TAG,
-            "Model '${model.name}' is not from huggingface. Start downloading the model...",
+            "Model '${model.name}' is not from a protected source. Start downloading the model...",
           )
           withContext(Dispatchers.Main) { startDownload(null) }
         }
@@ -394,12 +398,18 @@ fun DownloadAndTryButton(
         Icon(
           if (needToDownloadFirst) Icons.Outlined.FileDownload
           else Icons.AutoMirrored.Rounded.ArrowForward,
-          contentDescription = null,
+          contentDescription = stringResource(R.string.cd_download_or_try),
           tint = textColor,
         )
 
         if (!compact) {
-          if (needToDownloadFirst) {
+          if (isPartiallyDownloaded) {
+            Text(
+              stringResource(R.string.resume_download),
+              color = textColor,
+              style = MaterialTheme.typography.titleMedium,
+            )
+          } else if (needToDownloadFirst) {
             Text(
               stringResource(R.string.download),
               color = textColor,
@@ -479,7 +489,7 @@ fun DownloadAndTryButton(
         ) {
           Icon(
             Icons.Outlined.Close,
-            contentDescription = null,
+            contentDescription = stringResource(R.string.cd_close_download),
             tint = MaterialTheme.colorScheme.onSurface,
           )
         }
@@ -507,9 +517,9 @@ fun DownloadAndTryButton(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.padding(horizontal = 16.dp),
       ) {
-        Text("Acknowledge user agreement", style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(R.string.acknowledge_user_agreement), style = MaterialTheme.typography.titleLarge)
         Text(
-          "This is a gated model. Please click the button below to view and agree to the user agreement. After accepting, simply close that tab to proceed with the model download.",
+          stringResource(R.string.gated_model_agreement_message),
           style = MaterialTheme.typography.bodyMedium,
           modifier = Modifier.padding(vertical = 16.dp),
         )
@@ -529,7 +539,7 @@ fun DownloadAndTryButton(
             showAgreementAckSheet = false
           }
         ) {
-          Text("Open user agreement")
+          Text(stringResource(R.string.open_user_agreement))
         }
       }
     }
@@ -544,10 +554,10 @@ fun DownloadAndTryButton(
           tint = MaterialTheme.colorScheme.error,
         )
       },
-      title = { Text("Unknown network error") },
-      text = { Text("Please check your internet connection.") },
+      title = { Text(stringResource(R.string.unknown_network_error)) },
+      text = { Text(stringResource(R.string.check_internet_connection)) },
       onDismissRequest = { showErrorDialog = false },
-      confirmButton = { TextButton(onClick = { showErrorDialog = false }) { Text("Close") } },
+      confirmButton = { TextButton(onClick = { showErrorDialog = false }) { Text(stringResource(R.string.close)) } },
     )
   }
 

@@ -1,0 +1,8 @@
+appId: com.vertu.edge
+version: 1.0
+---
+- launchApp
+- tapOn: "Create new contact"
+- inputText: "John"
+- tapOn: "Save"
+- assertVisible: "Contact saved"

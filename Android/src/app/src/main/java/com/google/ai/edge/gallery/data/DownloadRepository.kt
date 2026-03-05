@@ -37,6 +37,7 @@ import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.google.ai.edge.gallery.AppLifecycleProvider
+import com.google.ai.edge.gallery.BuildConfig
 import com.google.ai.edge.gallery.GalleryEvent
 import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.firebaseAnalytics
@@ -231,17 +232,18 @@ class DefaultDownloadRepository(
           WorkInfo.State.FAILED,
           WorkInfo.State.CANCELLED -> {
             var status = ModelDownloadStatusType.FAILED
-            val errorMessage = workInfo.outputData.getString(KEY_MODEL_DOWNLOAD_ERROR_MESSAGE) ?: ""
+            val rawErrorMessage = workInfo.outputData.getString(KEY_MODEL_DOWNLOAD_ERROR_MESSAGE) ?: ""
+            val errorMessage = categorizeDownloadError(rawErrorMessage)
             Log.d(
               "repo",
-              "worker %s FAILED or CANCELLED: %s".format(workerId.toString(), errorMessage),
+              "worker %s FAILED or CANCELLED: %s".format(workerId.toString(), rawErrorMessage),
             )
             if (workInfo.state == WorkInfo.State.CANCELLED) {
               status = ModelDownloadStatusType.NOT_DOWNLOADED
             } else {
               sendNotification(
                 title = context.getString(R.string.notification_title_fail),
-                text = context.getString(R.string.notification_content_success).format(model.name),
+                text = context.getString(R.string.notification_content_fail).format(model.name),
                 taskId = "",
                 modelName = "",
               )
@@ -253,7 +255,6 @@ class DefaultDownloadRepository(
 
             val startTime = downloadStartTimeSharedPreferences.getLong(model.name, 0L)
             val duration = System.currentTimeMillis() - startTime
-            // TODO: Add failure reasons
             firebaseAnalytics?.logEvent(
               GalleryEvent.MODEL_DOWNLOAD.id,
               bundleOf(
@@ -271,6 +272,23 @@ class DefaultDownloadRepository(
     }
   }
 
+  private fun categorizeDownloadError(rawMessage: String): String {
+    return when {
+      rawMessage.contains("UnknownHostException") || rawMessage.contains("Unable to resolve host") ->
+        "No internet connection. Check your network and try again."
+      rawMessage.contains("SocketTimeoutException") || rawMessage.contains("timeout", ignoreCase = true) ->
+        "Connection timed out. Please try again."
+      rawMessage.contains("No space") || rawMessage.contains("ENOSPC") ->
+        "Insufficient storage space."
+      rawMessage.contains("403") ->
+        "Access denied. Check your authentication token."
+      rawMessage.contains("404") ->
+        "Model not found. It may have been removed."
+      rawMessage.isNotEmpty() -> "Download failed: $rawMessage"
+      else -> "Download failed: Unknown error"
+    }
+  }
+
   private fun sendNotification(title: String, text: String, taskId: String, modelName: String) {
     // Don't send notification if app is in foreground.
     if (lifecycleProvider.isAppInForeground) {
@@ -278,7 +296,7 @@ class DefaultDownloadRepository(
     }
 
     val channelId = "download_notification"
-    val channelName = "AI Edge Gallery download notification"
+    val channelName = "${BuildConfig.VERTU_APP_NAME} download notification"
 
     // Create the NotificationChannel, but only on API 26+ because
     // the NotificationChannel class is new and not in the support library
@@ -296,7 +314,10 @@ class DefaultDownloadRepository(
     // Download from global model manager. Open the global model manager screen.
     else if (taskId == DOWNLOAD_FROM_GLOBAL_MODEL_MANAGER_TASK_ID) {
       intent =
-        Intent(Intent.ACTION_VIEW, "com.google.ai.edge.gallery://global_model_manager".toUri())
+        Intent(
+            Intent.ACTION_VIEW,
+            "${BuildConfig.VERTU_DEEP_LINK_SCHEME}://global_model_manager".toUri(),
+          )
           .apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }
     } else {
 
@@ -304,7 +325,7 @@ class DefaultDownloadRepository(
       intent =
         Intent(
             Intent.ACTION_VIEW,
-            "com.google.ai.edge.gallery://model/$taskId/${modelName}".toUri(),
+            "${BuildConfig.VERTU_DEEP_LINK_SCHEME}://model/$taskId/${modelName}".toUri(),
           )
           .apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }
     }
@@ -320,8 +341,7 @@ class DefaultDownloadRepository(
 
     val builder =
       NotificationCompat.Builder(context, channelId)
-        // TODO: replace icon.
-        .setSmallIcon(android.R.drawable.ic_dialog_info)
+        .setSmallIcon(R.drawable.ic_launcher_foreground)
         .setContentTitle(title)
         .setContentText(text)
         .setPriority(NotificationCompat.PRIORITY_HIGH)

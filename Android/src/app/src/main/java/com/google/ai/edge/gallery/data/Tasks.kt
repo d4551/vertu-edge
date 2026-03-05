@@ -42,6 +42,9 @@ data class Task(
   /** The label of the task, for display purpose. */
   val label: String,
 
+  /** Optional string resource for localized label. When set, use stringResource(labelResId) for display. */
+  @StringRes val labelResId: Int? = null,
+
   /**
    * The category of the task.
    *

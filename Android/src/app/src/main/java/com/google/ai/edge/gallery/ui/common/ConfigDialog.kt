@@ -83,6 +83,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.data.BooleanSwitchConfig
 import com.google.ai.edge.gallery.data.BottomSheetSelectorConfig
 import com.google.ai.edge.gallery.data.BottomSheetSelectorItem
@@ -165,7 +166,7 @@ fun ConfigDialog(
         ) {
           // Cancel button.
           if (showCancel) {
-            TextButton(onClick = { onDismissed() }) { Text("Cancel") }
+            TextButton(onClick = { onDismissed() }) { Text(stringResource(R.string.cancel)) }
           }
 
           // Ok button
@@ -220,9 +221,11 @@ fun ConfigEditorsPanel(configs: List<Config>, values: SnapshotStateMap<String, A
 
 @Composable
 fun LabelRow(config: LabelConfig, values: SnapshotStateMap<String, Any>) {
+  val configLabel =
+    config.key.labelResId?.let { stringResource(it) } ?: config.key.label
   Column(modifier = Modifier.fillMaxWidth()) {
     // Field label.
-    Text(config.key.label, style = MaterialTheme.typography.titleSmall)
+    Text(configLabel, style = MaterialTheme.typography.titleSmall)
     // Content label.
     val label =
       try {
@@ -264,10 +267,12 @@ fun getTextFieldDisplayValue(valueType: ValueType, value: Float): String {
 @Composable
 fun NumberSliderRow(config: NumberSliderConfig, values: SnapshotStateMap<String, Any>) {
   val focusManager = LocalFocusManager.current
+  val configLabel =
+    config.key.labelResId?.let { stringResource(it) } ?: config.key.label
 
   Column(modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}) {
     // Field label.
-    Text(config.key.label, style = MaterialTheme.typography.titleSmall)
+    Text(configLabel, style = MaterialTheme.typography.titleSmall)
 
     // Controls row.
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -362,8 +367,10 @@ fun BooleanSwitchRow(config: BooleanSwitchConfig, values: SnapshotStateMap<Strin
     } catch (e: Exception) {
       false
     }
+  val configLabel =
+    config.key.labelResId?.let { stringResource(it) } ?: config.key.label
   Column(modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}) {
-    Text(config.key.label, style = MaterialTheme.typography.titleSmall)
+    Text(configLabel, style = MaterialTheme.typography.titleSmall)
     Switch(checked = switchValue, onCheckedChange = { values[config.key.label] = it })
   }
 }
@@ -382,11 +389,20 @@ fun SegmentedButtonRow(config: SegmentedButtonConfig, values: SnapshotStateMap<S
       List(config.options.size) { index -> selectedOptions.contains(config.options[index]) }
     )
   }
+  val configLabel =
+    config.key.labelResId?.let { stringResource(it) } ?: config.key.label
+  val optionLabelResIds = config.optionLabelResIds
 
   Column(modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}) {
-    Text(config.key.label, style = MaterialTheme.typography.titleSmall)
+    Text(configLabel, style = MaterialTheme.typography.titleSmall)
     MultiChoiceSegmentedButtonRow {
       config.options.forEachIndexed { index, label ->
+        val displayLabel =
+          if (optionLabelResIds != null && index < optionLabelResIds.size) {
+            stringResource(optionLabelResIds[index])
+          } else {
+            label
+          }
         SegmentedButton(
           shape = SegmentedButtonDefaults.itemShape(index = index, count = config.options.size),
           onCheckedChange = {
@@ -413,7 +429,7 @@ fun SegmentedButtonRow(config: SegmentedButtonConfig, values: SnapshotStateMap<S
                 .joinToString(",")
           },
           checked = selectionStates[index],
-          label = { Text(label) },
+          label = { Text(displayLabel) },
         )
       }
     }
@@ -447,12 +463,14 @@ fun BottomSheetSelectorRow(
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   val scope = rememberCoroutineScope()
 
+  val configLabel =
+    config.key.labelResId?.let { stringResource(it) } ?: config.key.label
   Column(
     modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
     verticalArrangement = Arrangement.spacedBy(4.dp),
   ) {
     if (showLabel) {
-      Text(config.key.label, style = MaterialTheme.typography.titleSmall)
+      Text(configLabel, style = MaterialTheme.typography.titleSmall)
     }
     Row(
       horizontalArrangement = Arrangement.SpaceBetween,
@@ -474,7 +492,7 @@ fun BottomSheetSelectorRow(
       )
       Icon(
         Icons.Rounded.ArrowDropDown,
-        contentDescription = null,
+        contentDescription = stringResource(R.string.cd_dropdown),
         tint = MaterialTheme.colorScheme.onSurface,
       )
     }
@@ -517,7 +535,7 @@ fun BottomSheetSelectorRow(
             ) {
               Icon(
                 Icons.Rounded.CheckCircle,
-                contentDescription = null,
+                contentDescription = stringResource(R.string.cd_check),
                 tint = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.alpha(if (option == selectedOption) 1f else 0f),
               )

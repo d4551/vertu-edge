@@ -113,6 +113,7 @@ import java.security.MessageDigest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 private const val TAG = "AGTinyGarden"
 private const val ASSETS_BASE_URL = "https://appassets.androidplatform.net"
@@ -528,9 +529,9 @@ fun MainUi(
                       Log.d(TAG, "webview finished loading")
 
                       // Show help on first launch.
-                      if (!viewModel.dataStoreRepository.getHasRunTinyGarden()) {
+                      if (!runBlocking { viewModel.dataStoreRepository.getHasRunTinyGarden() }) {
                         Log.d(TAG, "First time running Tiny Garden. Showing help screen...")
-                        viewModel.dataStoreRepository.setHasRunTinyGarden(true)
+                        runBlocking { viewModel.dataStoreRepository.setHasRunTinyGarden(true) }
                         scope.launch {
                           delay(1000)
                           webViewRef
@@ -587,9 +588,9 @@ fun MainUi(
                 //
                 // http://appassets.androidplatform.net' is the recommended, reserved domain.
                 var url = "$ASSETS_BASE_URL/assets/tinygarden/index.html"
-                if (!viewModel.dataStoreRepository.getHasRunTinyGarden()) {
+                if (!runBlocking { viewModel.dataStoreRepository.getHasRunTinyGarden() }) {
                   Log.d(TAG, "First time running Tiny Garden. Showing tutorial screen...")
-                  viewModel.dataStoreRepository.setHasRunTinyGarden(true)
+                  runBlocking { viewModel.dataStoreRepository.setHasRunTinyGarden(true) }
                   url = "$url?tutorial=1"
                 }
                 loadUrl(url)

@@ -36,7 +36,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.Task
 import com.google.ai.edge.gallery.data.convertValueToTargetType
@@ -88,7 +90,7 @@ fun ModelSelector(
   // Config dialog.
   if (showConfigDialog) {
     ConfigDialog(
-      title = "Model configs",
+      title = stringResource(R.string.model_configs),
       configs = model.configs,
       initialValues = model.configValues,
       onDismissed = { showConfigDialog = false },

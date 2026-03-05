@@ -51,6 +51,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.google.ai.edge.gallery.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -86,7 +87,7 @@ fun BenchmarkModelPicker(
     Icon(
       Icons.Rounded.ArrowDropDown,
       modifier = Modifier.size(20.dp).sizeIn(minWidth = 20.dp),
-      contentDescription = null,
+      contentDescription = stringResource(R.string.cd_dropdown),
     )
   }
 
@@ -123,7 +124,7 @@ fun BenchmarkModelPicker(
             ) {
               Icon(
                 Icons.Rounded.CheckCircle,
-                contentDescription = null,
+                contentDescription = stringResource(R.string.cd_check),
                 tint = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.alpha(if (modelName == selectedModelName) 1f else 0f),
               )

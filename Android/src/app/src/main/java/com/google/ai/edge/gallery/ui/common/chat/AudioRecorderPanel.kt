@@ -172,7 +172,7 @@ fun AudioRecorderPanel(
               Modifier.size(8.dp)
                 .background(MaterialTheme.customColors.recordButtonBgColor, CircleShape)
           )
-          Text("$elapsedSeconds s")
+          Text(stringResource(R.string.recording_seconds, elapsedSeconds))
         }
       }
 

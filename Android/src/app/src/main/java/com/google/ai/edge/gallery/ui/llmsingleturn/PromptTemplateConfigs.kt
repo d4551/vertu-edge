@@ -16,8 +16,10 @@
 
 package com.google.ai.edge.gallery.ui.llmsingleturn
 
+import androidx.annotation.StringRes
 import androidx.compose.ui.graphics.Brush.Companion.linearGradient
 import androidx.compose.ui.graphics.Color
+import com.google.ai.edge.gallery.R
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -27,37 +29,37 @@ enum class PromptTemplateInputEditorType {
   SINGLE_SELECT
 }
 
-enum class RewriteToneType(val label: String) {
-  FORMAL(label = "Formal"),
-  CASUAL(label = "Casual"),
-  FRIENDLY(label = "Friendly"),
-  POLITE(label = "Polite"),
-  ENTHUSIASTIC(label = "Enthusiastic"),
-  CONCISE(label = "Concise"),
+enum class RewriteToneType(val label: String, @StringRes val labelResId: Int) {
+  FORMAL(label = "Formal", labelResId = R.string.prompt_tone_formal),
+  CASUAL(label = "Casual", labelResId = R.string.prompt_tone_casual),
+  FRIENDLY(label = "Friendly", labelResId = R.string.prompt_tone_friendly),
+  POLITE(label = "Polite", labelResId = R.string.prompt_tone_polite),
+  ENTHUSIASTIC(label = "Enthusiastic", labelResId = R.string.prompt_tone_enthusiastic),
+  CONCISE(label = "Concise", labelResId = R.string.prompt_tone_concise),
 }
 
-enum class SummarizationType(val label: String) {
-  KEY_BULLET_POINT(label = "Key bullet points (3-5)"),
-  SHORT_PARAGRAPH(label = "Short paragraph (1-2 sentences)"),
-  CONCISE_SUMMARY(label = "Concise summary (~50 words)"),
-  HEADLINE_TITLE(label = "Headline / title"),
-  ONE_SENTENCE_SUMMARY(label = "One-sentence summary"),
+enum class SummarizationType(val label: String, @StringRes val labelResId: Int) {
+  KEY_BULLET_POINT(label = "Key bullet points (3-5)", labelResId = R.string.prompt_style_key_bullet),
+  SHORT_PARAGRAPH(label = "Short paragraph (1-2 sentences)", labelResId = R.string.prompt_style_short_paragraph),
+  CONCISE_SUMMARY(label = "Concise summary (~50 words)", labelResId = R.string.prompt_style_concise_summary),
+  HEADLINE_TITLE(label = "Headline / title", labelResId = R.string.prompt_style_headline),
+  ONE_SENTENCE_SUMMARY(label = "One-sentence summary", labelResId = R.string.prompt_style_one_sentence),
 }
 
-enum class LanguageType(val label: String) {
-  CPP(label = "C++"),
-  JAVA(label = "Java"),
-  JAVASCRIPT(label = "JavaScript"),
-  KOTLIN(label = "Kotlin"),
-  PYTHON(label = "Python"),
-  SWIFT(label = "Swift"),
-  TYPESCRIPT(label = "TypeScript"),
+enum class LanguageType(val label: String, @StringRes val labelResId: Int) {
+  CPP(label = "C++", labelResId = R.string.prompt_lang_cpp),
+  JAVA(label = "Java", labelResId = R.string.prompt_lang_java),
+  JAVASCRIPT(label = "JavaScript", labelResId = R.string.prompt_lang_javascript),
+  KOTLIN(label = "Kotlin", labelResId = R.string.prompt_lang_kotlin),
+  PYTHON(label = "Python", labelResId = R.string.prompt_lang_python),
+  SWIFT(label = "Swift", labelResId = R.string.prompt_lang_swift),
+  TYPESCRIPT(label = "TypeScript", labelResId = R.string.prompt_lang_typescript),
 }
 
-enum class InputEditorLabel(val label: String) {
-  TONE(label = "Tone"),
-  STYLE(label = "Style"),
-  LANGUAGE(label = "Language"),
+enum class InputEditorLabel(val label: String, @StringRes val labelResId: Int) {
+  TONE(label = "Tone", labelResId = R.string.prompt_tone),
+  STYLE(label = "Style", labelResId = R.string.prompt_style),
+  LANGUAGE(label = "Language", labelResId = R.string.prompt_language),
 }
 
 open class PromptTemplateInputEditor(
@@ -71,6 +73,8 @@ class PromptTemplateSingleSelectInputEditor(
   override val label: String,
   val options: List<String> = listOf(),
   override val defaultOption: String = "",
+  @StringRes val labelResId: Int? = null,
+  val optionLabelResIds: List<Int> = emptyList(),
 ) :
   PromptTemplateInputEditor(
     label = label,
@@ -88,6 +92,7 @@ private val GEMINI_GRADIENT_STYLE =
 @Suppress("ImmutableEnum")
 enum class PromptTemplateType(
   val label: String,
+  @StringRes val labelResId: Int,
   val config: PromptTemplateConfig,
   val genFullPrompt: (userInput: String, inputEditorValues: Map<String, Any>) -> AnnotatedString =
     { _, _ ->
@@ -97,6 +102,7 @@ enum class PromptTemplateType(
 ) {
   FREE_FORM(
     label = "Free form",
+    labelResId = R.string.prompt_type_free_form,
     config = PromptTemplateConfig(),
     genFullPrompt = { userInput, _ -> AnnotatedString(userInput) },
     examplePrompts =
@@ -113,6 +119,7 @@ enum class PromptTemplateType(
   ),
   REWRITE_TONE(
     label = "Rewrite tone",
+    labelResId = R.string.prompt_type_rewrite_tone,
     config =
       PromptTemplateConfig(
         inputEditors =
@@ -121,6 +128,8 @@ enum class PromptTemplateType(
               label = InputEditorLabel.TONE.label,
               options = RewriteToneType.entries.map { it.label },
               defaultOption = RewriteToneType.FORMAL.label,
+              labelResId = InputEditorLabel.TONE.labelResId,
+              optionLabelResIds = RewriteToneType.entries.map { it.labelResId },
             )
           )
       ),
@@ -144,6 +153,7 @@ enum class PromptTemplateType(
   ),
   SUMMARIZE_TEXT(
     label = "Summarize text",
+    labelResId = R.string.prompt_type_summarize_text,
     config =
       PromptTemplateConfig(
         inputEditors =
@@ -152,6 +162,8 @@ enum class PromptTemplateType(
               label = InputEditorLabel.STYLE.label,
               options = SummarizationType.entries.map { it.label },
               defaultOption = SummarizationType.KEY_BULLET_POINT.label,
+              labelResId = InputEditorLabel.STYLE.labelResId,
+              optionLabelResIds = SummarizationType.entries.map { it.labelResId },
             )
           )
       ),
@@ -172,6 +184,7 @@ enum class PromptTemplateType(
   ),
   CODE_SNIPPET(
     label = "Code snippet",
+    labelResId = R.string.prompt_type_code_snippet,
     config =
       PromptTemplateConfig(
         inputEditors =
@@ -180,6 +193,8 @@ enum class PromptTemplateType(
               label = InputEditorLabel.LANGUAGE.label,
               options = LanguageType.entries.map { it.label },
               defaultOption = LanguageType.JAVASCRIPT.label,
+              labelResId = InputEditorLabel.LANGUAGE.labelResId,
+              optionLabelResIds = LanguageType.entries.map { it.labelResId },
             )
           )
       ),

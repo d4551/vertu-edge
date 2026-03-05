@@ -69,6 +69,46 @@
         "accelerators": "cpu"
       },
       "taskTypes": ["llm_chat", "llm_prompt_lab"]
+    },
+    {
+      "name": "FunctionGemma 270M (Mobile Actions)",
+      "modelId": "google/function-gemma-270m",
+      "modelFile": "function-gemma-270m.task",
+      "description": "Fine-tuned FunctionGemma 270M for device actions and natural-language device control via Vertu RPA.",
+      "sizeInBytes": 850000000,
+      "estimatedPeakMemoryInBytes": 1500000000,
+      "version": "20260303",
+      "source": "huggingface",
+      "defaultConfig": {
+        "topK": 40,
+        "topP": 0.95,
+        "temperature": 0.0,
+        "maxTokens": 1024,
+        "accelerators": "cpu"
+      },
+      "taskTypes": ["llm_chat", "rpa_actions"]
+    },
+    {
+      "name": "AutoGLM-Phone-9B-Multilingual",
+      "modelId": "mradermacher/AutoGLM-Phone-9B-Multilingual-GGUF",
+      "modelFile": "AutoGLM-Phone-9B-Multilingual.Q4_K_M.gguf",
+      "description": "AutoGLM Phone 9B multilingual GGUF from [mradermacher/AutoGLM-Phone-9B-Multilingual-GGUF](https://huggingface.co/mradermacher/AutoGLM-Phone-9B-Multilingual-GGUF).",
+      "sizeInBytes": 5758482720,
+      "commitHash": "5b34029a6b23a90aea2e377f1f9b273d1001638c",
+      "source": "huggingface",
+      "defaultConfig": {
+        "topK": 40,
+        "topP": 0.95,
+        "temperature": 1.0,
+        "maxTokens": 4096,
+        "accelerators": "cpu,gpu"
+      },
+      "taskTypes": [
+        "llm_chat",
+        "llm_prompt_lab",
+        "llm_ask_image",
+        "llm_ask_audio"
+      ]
     }
   ]
 }

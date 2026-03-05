@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vertu.edge/schemas/model-manifest-v2.schema.json",
+  "title": "ModelManifestV2",
+  "type": "object",
+  "required": ["models"],
+  "properties": {
+    "models": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "modelId",
+          "modelFile",
+          "description",
+          "sizeInBytes",
+          "taskTypes"
+        ],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "modelId": {"type": "string", "minLength": 1},
+          "modelFile": {"type": "string", "minLength": 1},
+          "description": {"type": "string"},
+          "source": {"type": "string", "enum": ["huggingface", "local"]},
+          "sizeInBytes": {"type": "integer", "minimum": 1},
+          "estimatedPeakMemoryInBytes": {"type": "integer", "minimum": 1},
+          "sha256": {
+            "type": "string",
+            "pattern": "^[A-Fa-f0-9]{64}$"
+          },
+          "commitHash": {"type": "string"},
+          "version": {"type": "string"},
+          "taskTypes": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "minItems": 1
+          },
+          "defaultConfig": {
+            "type": "object",
+            "properties": {
+              "topK": {"type": "integer", "minimum": 1},
+              "topP": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+              "temperature": {"type": "number", "minimum": 0.0},
+              "maxTokens": {"type": "integer", "minimum": 1},
+              "accelerators": {"type": "string"}
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}

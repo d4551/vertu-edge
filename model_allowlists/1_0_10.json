@@ -134,6 +134,34 @@
       "bestForTaskTypes": [
         "llm_mobile_actions"
       ]
+    },
+    {
+      "name": "AutoGLM-Phone-9B-Multilingual",
+      "modelId": "mradermacher/AutoGLM-Phone-9B-Multilingual-GGUF",
+      "modelFile": "AutoGLM-Phone-9B-Multilingual.Q4_K_M.gguf",
+      "description": "AutoGLM Phone 9B multilingual variant from [mradermacher/AutoGLM-Phone-9B-Multilingual-GGUF](https://huggingface.co/mradermacher/AutoGLM-Phone-9B-Multilingual-GGUF), packaged as Q4_K_M GGUF for on-device download.",
+      "sizeInBytes": 5758482720,
+      "minDeviceMemoryInGb": 12,
+      "commitHash": "5b34029a6b23a90aea2e377f1f9b273d1001638c",
+      "llmSupportImage": true,
+      "llmSupportAudio": true,
+      "defaultConfig": {
+        "topK": 40,
+        "topP": 0.95,
+        "temperature": 1.0,
+        "maxTokens": 4096,
+        "accelerators": "cpu,gpu"
+      },
+      "taskTypes": [
+        "llm_chat",
+        "llm_prompt_lab",
+        "llm_ask_image",
+        "llm_ask_audio"
+      ],
+      "bestForTaskTypes": [
+        "llm_chat",
+        "llm_prompt_lab"
+      ]
     }
   ]
 }

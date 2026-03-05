@@ -42,8 +42,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.google.ai.edge.gallery.R
 
 @Composable
 fun Accordions(
@@ -70,7 +72,7 @@ fun Accordions(
     ) {
       Icon(
         if (expanded) Icons.Rounded.ArrowDropDown else Icons.AutoMirrored.Rounded.ArrowRight,
-        contentDescription = null,
+        contentDescription = if (expanded) stringResource(R.string.cd_accordion_collapse) else stringResource(R.string.cd_accordion_expand),
       )
       Column(modifier = Modifier.weight(1f)) {
         Text(

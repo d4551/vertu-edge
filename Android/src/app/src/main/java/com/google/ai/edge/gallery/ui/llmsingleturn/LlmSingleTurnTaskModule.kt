@@ -41,6 +41,7 @@ class LlmSingleTurnTask @Inject constructor() : CustomTask {
     Task(
       id = BuiltInTaskId.LLM_PROMPT_LAB,
       label = "Prompt Lab",
+      labelResId = R.string.task_prompt_lab,
       category = Category.LLM,
       icon = Icons.Outlined.Widgets,
       models = mutableListOf(),

@@ -140,7 +140,7 @@ fun ModelPickerChip(
         Icon(
           Icons.Rounded.ArrowDropDown,
           modifier = Modifier.size(20.dp),
-          contentDescription = null,
+          contentDescription = stringResource(R.string.cd_change_model_chip),
         )
       }
     }

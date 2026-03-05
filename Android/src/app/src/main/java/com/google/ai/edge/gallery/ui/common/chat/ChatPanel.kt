@@ -165,6 +165,9 @@ fun ChatPanel(
   // Remember the LazyListState to control scrolling
   val listState = rememberLazyListState()
   val density = LocalDensity.current
+  // Scroll threshold expressed in dp so it scales correctly across display densities.
+  // 90dp is slightly taller than the "show stats" chip.
+  val scrollThresholdPx = with(density) { 90.dp.toPx() }.toInt()
   var showBenchmarkConfigsDialog by remember { mutableStateOf(false) }
   val benchmarkMessage: MutableState<ChatMessage?> = remember { mutableStateOf(null) }
 
@@ -204,12 +207,12 @@ fun ChatPanel(
       // Determines if an automatic scroll is necessary. It is true if:
       // 1. The last item is not yet fully visible
       // OR
-      // 2. The scroll position is close to the bottom (within 90 pixels of the end offset. 90 is
-      //    slightly taller than the "show stats" chip).
+      // 2. The scroll position is close to the bottom (within scrollThresholdPx of the end offset;
+      //    the threshold is 90dp, slightly taller than the "show stats" chip).
       val canScroll =
         lastVisibleItem.index < messages.size - 1 ||
           lastVisibleItem.offset + lastVisibleItem.size - listState.layoutInfo.viewportEndOffset <
-            90
+            scrollThresholdPx
       if (canScroll) {
         scrollToBottom(listState = listState, animate = true)
       }
@@ -481,7 +484,7 @@ fun ChatPanel(
             MessageBodyInfo(
               ChatMessageInfo(
                 content =
-                  "To get started, click + below to add images (up to 10 in a single session) and type a prompt to ask a question about it."
+                  stringResource(R.string.chat_get_started_images)
               ),
               smallFontSize = false,
             )
@@ -502,7 +505,7 @@ fun ChatPanel(
             MessageBodyInfo(
               ChatMessageInfo(
                 content =
-                  "To get started, tap the + icon to add your audio clip. Limited to 1 clip up to 30 seconds long."
+                  stringResource(R.string.chat_get_started_audio)
               ),
               smallFontSize = false,
             )
@@ -585,6 +588,7 @@ fun ChatPanel(
         .getOrNull(longPressedMessageIndex)
     if (message != null && message is ChatMessageText) {
       val clipboard = LocalClipboard.current
+      val textCopiedMsg = stringResource(R.string.text_copied_to_clipboard)
 
       ModalBottomSheet(
         onDismissRequest = { showMessageLongPressedSheet = false },
@@ -606,7 +610,7 @@ fun ChatPanel(
                 showMessageLongPressedSheet = false
 
                 // Show a snack bar.
-                scope.launch { snackbarHostState.showSnackbar("Text copied to clipboard") }
+                scope.launch { snackbarHostState.showSnackbar(textCopiedMsg) }
               }
           ) {
             Row(
@@ -619,7 +623,7 @@ fun ChatPanel(
                 contentDescription = stringResource(R.string.cd_copy_to_clipboard_icon),
                 modifier = Modifier.size(18.dp),
               )
-              Text("Copy text")
+              Text(stringResource(R.string.copy_text))
             }
           }
         }

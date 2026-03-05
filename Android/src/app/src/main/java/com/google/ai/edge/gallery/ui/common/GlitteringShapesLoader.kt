@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -146,7 +147,7 @@ private fun Particle(shape: Shape, boxSize: IntSize) {
   val progress = if (exitProgress > 0) (1 - exitProgress) else enterProgress
   Image(
     painter = painterResource(shape.shape),
-    contentDescription = null,
+    contentDescription = stringResource(R.string.cd_loader),
     modifier =
       Modifier.size(shape.size).graphicsLayer {
         translationX = boxSize.width * shape.relativeX

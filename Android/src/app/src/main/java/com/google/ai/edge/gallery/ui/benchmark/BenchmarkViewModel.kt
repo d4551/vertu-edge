@@ -17,7 +17,9 @@ package com.google.ai.edge.gallery.ui.benchmark
 
 import android.content.Context
 import android.util.Log
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
+import com.google.ai.edge.gallery.R
 import androidx.lifecycle.viewModelScope
 import com.google.ai.edge.gallery.BuildConfig
 import com.google.ai.edge.gallery.data.DataStoreRepository
@@ -42,14 +44,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 private const val TAG = "AGBenchmarkVM"
 
-enum class Aggregation(val label: String) {
-  AVG(label = "avg"),
-  MEDIAN(label = "median"),
-  MIN(label = "min"),
-  MAX(label = "max"),
+enum class Aggregation(val label: String, @StringRes val labelResId: Int) {
+  AVG(label = "avg", labelResId = R.string.stat_avg),
+  MEDIAN(label = "median", labelResId = R.string.stat_median),
+  MIN(label = "min", labelResId = R.string.stat_min),
+  MAX(label = "max", labelResId = R.string.stat_max),
   // P25(label = "p25"),
   // P75(label = "p75"),
 }
@@ -70,6 +73,7 @@ data class BenchmarkUiState(
   val running: Boolean = false,
   val totalRunCount: Int = 0,
   val completedRunCount: Int = 0,
+  val benchmarkError: String? = null,
 )
 
 @HiltViewModel
@@ -84,7 +88,7 @@ constructor(
 
   init {
     // Load results from storage.
-    val storedResults = dataStoreRepository.getAllBenchmarkResults()
+    val storedResults = runBlocking { dataStoreRepository.getAllBenchmarkResults() }
     Log.d(TAG, "Loaded ${storedResults.size} benchmark results")
     setBenchmarkResults(results = storedResults)
     collapseAll()
@@ -99,6 +103,7 @@ constructor(
     runCount: Int,
   ) {
     viewModelScope.launch(Dispatchers.Default) {
+      clearBenchmarkError()
       setRunning(running = true)
       setRunProgress(completedRunCount = 0)
       setTotalRunCount(totalRunCount = runCount)
@@ -114,96 +119,106 @@ constructor(
         )
       Log.d(TAG, "Running benchmark: ${parts.joinToString("\n")}")
 
-      // TODO: handle error.
-      val startMs = System.currentTimeMillis()
-      val prefillSpeeds = mutableListOf<Double>()
-      val decodeSpeeds = mutableListOf<Double>()
-      val timesToFirstToken = mutableListOf<Double>()
-      var firstInitTime = 0.0
-      val nonFirstInitTimes = mutableListOf<Double>()
-      // Create a temporary cache dir to run benchmark in.
-      val timestamp = System.currentTimeMillis()
-      var needCleanUpCacheDir = true
-      val benchmarkCacheDir = File(appContext.cacheDir, "benchmark_$timestamp")
-      var cacheDirPath = benchmarkCacheDir.absolutePath
-      if (!benchmarkCacheDir.mkdirs()) {
-        Log.e(TAG, "Failed to create benchmark cache directory: ${benchmarkCacheDir.absolutePath}")
-        cacheDirPath = appContext.cacheDir.absolutePath
-        needCleanUpCacheDir = false
-      }
-      Log.d(TAG, "Using benchmark cache dir: $cacheDirPath")
-      val backend: Backend =
-        when (accelerator.lowercase()) {
-          "cpu" -> Backend.CPU
-          "gpu" -> Backend.GPU
-          "npu" -> Backend.NPU
-          else -> Backend.CPU
+      var benchmarkCacheDir: File? = null
+      try {
+        val startMs = System.currentTimeMillis()
+        val prefillSpeeds = mutableListOf<Double>()
+        val decodeSpeeds = mutableListOf<Double>()
+        val timesToFirstToken = mutableListOf<Double>()
+        var firstInitTime = 0.0
+        val nonFirstInitTimes = mutableListOf<Double>()
+        val timestamp = System.currentTimeMillis()
+        var needCleanUpCacheDir = true
+        benchmarkCacheDir = File(appContext.cacheDir, "benchmark_$timestamp")
+        var cacheDirPath = benchmarkCacheDir.absolutePath
+        if (!benchmarkCacheDir.mkdirs()) {
+          Log.e(TAG, "Failed to create benchmark cache directory: ${benchmarkCacheDir.absolutePath}")
+          cacheDirPath = appContext.cacheDir.absolutePath
+          needCleanUpCacheDir = false
         }
-      val modelPath = model.getPath(context = appContext)
-      for (i in 0 until runCount) {
-        Log.d(TAG, "Start running #$i...")
-        val benchmarkInfo =
-          benchmark(
-            modelPath = modelPath,
-            backend = backend,
-            prefillTokens = prefillTokens,
-            decodeTokens = decodeTokens,
-            cacheDir = cacheDirPath,
-          )
-        Log.d(TAG, "Done #$i")
+        Log.d(TAG, "Using benchmark cache dir: $cacheDirPath")
+        val backend: Backend =
+          when (accelerator.lowercase()) {
+            "cpu" -> Backend.CPU
+            "gpu" -> Backend.GPU
+            "npu" -> Backend.NPU
+            else -> Backend.CPU
+          }
+        val modelPath = model.getPath(context = appContext)
+        for (i in 0 until runCount) {
+          Log.d(TAG, "Start running #$i...")
+          val benchmarkInfo =
+            benchmark(
+              modelPath = modelPath,
+              backend = backend,
+              prefillTokens = prefillTokens,
+              decodeTokens = decodeTokens,
+              cacheDir = cacheDirPath,
+            )
+          Log.d(TAG, "Done #$i")
 
-        val initTimeMs = benchmarkInfo.initTimeInSecond * 1000.0
-        if (i == 0) {
-          firstInitTime = initTimeMs
-        } else {
-          nonFirstInitTimes.add(initTimeMs)
+          val initTimeMs = benchmarkInfo.initTimeInSecond * 1000.0
+          if (i == 0) {
+            firstInitTime = initTimeMs
+          } else {
+            nonFirstInitTimes.add(initTimeMs)
+          }
+          prefillSpeeds.add(benchmarkInfo.lastPrefillTokensPerSecond)
+          decodeSpeeds.add(benchmarkInfo.lastDecodeTokensPerSecond)
+          timesToFirstToken.add(benchmarkInfo.timeToFirstTokenInSecond)
+
+          setRunProgress(completedRunCount = i + 1)
         }
-        prefillSpeeds.add(benchmarkInfo.lastPrefillTokensPerSecond)
-        decodeSpeeds.add(benchmarkInfo.lastDecodeTokensPerSecond)
-        timesToFirstToken.add(benchmarkInfo.timeToFirstTokenInSecond)
+        val endMs = System.currentTimeMillis()
+        if (needCleanUpCacheDir) {
+          benchmarkCacheDir.deleteRecursively()
+          benchmarkCacheDir = null
+          Log.d(TAG, "Cleaned up benchmark cache dir: $cacheDirPath")
+        }
 
-        // Mark finish for this run.
-        setRunProgress(completedRunCount = i + 1)
+        val basicInfo =
+          LlmBenchmarkBasicInfo.newBuilder()
+            .setStartMs(startMs)
+            .setEndMs(endMs)
+            .setModelName(model.name)
+            .setAccelerator(accelerator)
+            .setPrefillTokens(prefillTokens)
+            .setDecodeTokens(decodeTokens)
+            .setNumberOfRuns(runCount)
+            .setAppVersion(BuildConfig.VERSION_NAME)
+            .build()
+        val stats =
+          LlmBenchmarkStats.newBuilder()
+            .setPrefillSpeed(calculateValueSeries(prefillSpeeds))
+            .setDecodeSpeed(calculateValueSeries(decodeSpeeds))
+            .setTimeToFirstToken(calculateValueSeries(timesToFirstToken))
+            .setFirstInitTimeMs(firstInitTime)
+            .setNonFirstInitTimeMs(calculateValueSeries(nonFirstInitTimes))
+            .build()
+
+        val result =
+          BenchmarkResult.newBuilder()
+            .setLlmResult(
+              LlmBenchmarkResult.newBuilder().setBaiscInfo(basicInfo).setStats(stats).build()
+            )
+            .build()
+        val newId = addBenchmarkResult(result = result)
+        collapseAll()
+        setExpanded(id = newId, expanded = true)
+      } catch (e: Exception) {
+        Log.e(TAG, "Benchmark run failed", e)
+        _uiState.update { it.copy(benchmarkError = e.message ?: "Benchmark failed") }
+      } finally {
+        benchmarkCacheDir?.let {
+          if (it.exists()) it.deleteRecursively()
+        }
+        setRunning(running = false)
       }
-      val endMs = System.currentTimeMillis()
-      if (needCleanUpCacheDir) {
-        benchmarkCacheDir.deleteRecursively()
-        Log.d(TAG, "Cleaned up benchmark cache dir: ${benchmarkCacheDir.absolutePath}")
-      }
-
-      // Create and add benchmark result.
-      val basicInfo =
-        LlmBenchmarkBasicInfo.newBuilder()
-          .setStartMs(startMs)
-          .setEndMs(endMs)
-          .setModelName(model.name)
-          .setAccelerator(accelerator)
-          .setPrefillTokens(prefillTokens)
-          .setDecodeTokens(decodeTokens)
-          .setNumberOfRuns(runCount)
-          .setAppVersion(BuildConfig.VERSION_NAME)
-          .build()
-      val stats =
-        LlmBenchmarkStats.newBuilder()
-          .setPrefillSpeed(calculateValueSeries(prefillSpeeds))
-          .setDecodeSpeed(calculateValueSeries(decodeSpeeds))
-          .setTimeToFirstToken(calculateValueSeries(timesToFirstToken))
-          .setFirstInitTimeMs(firstInitTime)
-          .setNonFirstInitTimeMs(calculateValueSeries(nonFirstInitTimes))
-          .build()
-
-      val result =
-        BenchmarkResult.newBuilder()
-          .setLlmResult(
-            LlmBenchmarkResult.newBuilder().setBaiscInfo(basicInfo).setStats(stats).build()
-          )
-          .build()
-      val newId = addBenchmarkResult(result = result)
-      collapseAll()
-      setExpanded(id = newId, expanded = true)
-
-      setRunning(running = false)
     }
+  }
+
+  fun clearBenchmarkError() {
+    _uiState.update { it.copy(benchmarkError = null) }
   }
 
   fun setShowResultsViewer(showResultsViewer: Boolean) {
@@ -222,7 +237,7 @@ constructor(
     _uiState.update { _uiState.value.copy(completedRunCount = completedRunCount) }
   }
 
-  fun addBenchmarkResult(result: BenchmarkResult): String {
+  suspend fun addBenchmarkResult(result: BenchmarkResult): String {
     val newResults = _uiState.value.results.toMutableList()
     // Add the new result to the beginning of the list.
     val newId = "${Random.nextDouble()}"
@@ -271,7 +286,7 @@ constructor(
       }
 
       // Update storage.
-      dataStoreRepository.deleteBenchmarkResult(index = index)
+      viewModelScope.launch { dataStoreRepository.deleteBenchmarkResult(index = index) }
     } else {
       Log.w(TAG, "Benchmark result with id $id not found.")
     }

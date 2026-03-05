@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="all">Tous</string>
+  <string name="app_name">Vertu Edge</string>
+  <string name="baseline">Référence</string>
+  <string name="basic_info">Informations de base</string>
+  <string name="benchmark">Benchmark</string>
+  <string name="benchmark_model">Modèle de benchmark</string>
+  <string name="benchmark_results">Résultats du benchmark</string>
+  <string name="benchmark_no_results">Aucun résultat de benchmark</string>
+  <string name="best_overall">Meilleur global</string>
+  <string name="cancel">Annuler</string>
+  <string name="close">Fermer</string>
+  <string name="clear">Effacer</string>
+  <string name="copy">Copier</string>
+  <string name="create">Créer</string>
+  <string name="delete">Supprimer</string>
+  <string name="disabled">Désactivé</string>
+  <string name="dismiss">Ignorer</string>
+  <string name="done">Terminé</string>
+  <string name="download">Télécharger</string>
+  <string name="resume_download">Reprendre le téléchargement</string>
+  <string name="edit">Modifier</string>
+  <string name="error">Erreur</string>
+  <string name="expand_all">Tout développer</string>
+  <string name="collapse_all">Tout réduire</string>
+  <string name="learn_more">En savoir plus</string>
+  <string name="listening">Écoute en cours...</string>
+  <string name="loading_model_list">Chargement de la liste des modèles...</string>
+  <string name="model_is_initializing_msg">Initialisation du modèle…</string>
+  <string name="model_manager">Gestionnaire de modèles</string>
+  <string name="model_not_downloaded_msg">Modèle pas encore téléchargé</string>
+  <string name="ok">OK</string>
+  <string name="preview">Aperçu</string>
+  <string name="retry">Réessayer</string>
+  <string name="send">Envoyer</string>
+  <string name="reset">Réinitialiser</string>
+  <string name="results">Résultats</string>
+  <string name="run_benchmark">Lancer le benchmark</string>
+  <string name="running">en cours</string>
+  <string name="select_model">Sélectionner un modèle</string>
+  <string name="settings">Paramètres</string>
+  <string name="share">Partager</string>
+  <string name="try_it">Essayer</string>
+  <string name="undo">Annuler l\'action</string>
+  <string name="unknown_error">Erreur inconnue</string>
+  <string name="view_results">Voir les résultats</string>
+  <string name="warming_up">préchauffage…</string>
+
+  <!-- Settings -->
+  <string name="theme">Thème</string>
+  <string name="theme_auto">Automatique</string>
+  <string name="theme_light">Clair</string>
+  <string name="theme_dark">Sombre</string>
+
+  <!-- Download -->
+  <string name="unzipping">Décompression…</string>
+  <string name="downloading_model">Téléchargement du modèle</string>
+
+  <!-- Model import -->
+  <string name="import_model">Importer</string>
+  <string name="import_model_title">Importer un modèle</string>
+  <string name="failed_to_import">Échec de l\'importation</string>
+  <string name="model_imported_successfully">Modèle importé avec succès</string>
+
+  <!-- Tasks -->
+  <string name="task_ai_chat">Chat IA</string>
+  <string name="task_prompt_lab">Laboratoire de prompts</string>
+
+  <!-- Config labels -->
+  <string name="config_max_tokens">Tokens maximum</string>
+  <string name="config_temperature">Température</string>
+  <string name="config_name">Nom</string>
+  <string name="config_accelerator">Accélérateur</string>
+  <string name="config_model_type">Type de modèle</string>
+
+  <!-- Accelerator -->
+  <string name="accelerator_cpu">CPU</string>
+  <string name="accelerator_gpu">GPU</string>
+</resources>

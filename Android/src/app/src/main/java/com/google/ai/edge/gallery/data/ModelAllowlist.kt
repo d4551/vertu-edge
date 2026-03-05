@@ -16,6 +16,7 @@
 
 package com.google.ai.edge.gallery.data
 
+import com.google.ai.edge.gallery.common.VertuRuntimeConfig
 import com.google.ai.edge.gallery.common.isPixel10
 import com.google.gson.annotations.SerializedName
 
@@ -34,9 +35,11 @@ data class AllowedModel(
   val modelFile: String,
   val description: String,
   val sizeInBytes: Long,
-  val commitHash: String,
+  @SerializedName(value = "commitHash", alternate = ["version"]) val commitHash: String = "",
   val defaultConfig: DefaultConfig,
   val taskTypes: List<String>,
+  val source: String? = null,
+  val sha256: String? = null,
   val disabled: Boolean? = null,
   val llmSupportImage: Boolean? = null,
   val llmSupportAudio: Boolean? = null,
@@ -48,9 +51,13 @@ data class AllowedModel(
   val url: String? = null,
 ) {
   fun toModel(): Model {
-    // Construct HF download url.
+    val resolvedVersion = commitHash.ifBlank { "main" }
+    val sourceDownloadBaseUrl = VertuRuntimeConfig.modelDownloadBaseUrl
+
+    // Construct source-aware model download URL when the allowlist entry omits a full URL.
     val downloadUrl =
-      url ?: "https://huggingface.co/$modelId/resolve/$commitHash/$modelFile?download=true"
+      url
+        ?: "${sourceDownloadBaseUrl}/$modelId/resolve/$resolvedVersion/$modelFile?download=true"
 
     // Config.
     val isLlmModel =
@@ -104,16 +111,18 @@ data class AllowedModel(
 
     return Model(
       name = name,
-      version = commitHash,
+      version = resolvedVersion,
       info = description,
       url = downloadUrl,
+      source = source?.trim()?.takeIf { it.isNotBlank() } ?: "",
       sizeInBytes = sizeInBytes,
+      sha256 = sha256 ?: "",
       minDeviceMemoryInGb = minDeviceMemoryInGb,
       configs = configs,
       downloadFileName = modelFile,
       showBenchmarkButton = showBenchmarkButton,
       showRunAgainButton = showRunAgainButton,
-      learnMoreUrl = "https://huggingface.co/${modelId}",
+      learnMoreUrl = "${sourceDownloadBaseUrl}/${modelId}",
       llmSupportImage = llmSupportImage == true,
       llmSupportAudio = llmSupportAudio == true,
       llmSupportTinyGarden = llmSupportTinyGarden == true,

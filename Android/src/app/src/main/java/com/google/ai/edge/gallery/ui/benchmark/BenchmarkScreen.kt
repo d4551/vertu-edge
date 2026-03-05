@@ -250,7 +250,7 @@ fun BenchmarkScreen(
               },
               modifier = Modifier.weight(1f),
             ) {
-              Icon(Icons.AutoMirrored.Rounded.List, contentDescription = null)
+              Icon(Icons.AutoMirrored.Rounded.List, contentDescription = stringResource(R.string.cd_view_results))
               Spacer(modifier = Modifier.width(4.dp))
               Text(stringResource(R.string.view_results))
             }
@@ -264,7 +264,7 @@ fun BenchmarkScreen(
               },
               modifier = Modifier.weight(1f),
             ) {
-              Icon(Icons.Rounded.BarChart, contentDescription = null)
+              Icon(Icons.Rounded.BarChart, contentDescription = stringResource(R.string.cd_run_benchmark))
               Spacer(modifier = Modifier.width(4.dp))
               Text(stringResource(R.string.benchmark))
             }

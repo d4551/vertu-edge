@@ -130,4 +130,37 @@ class MobileActionsTools(val onFunctionCalled: (Action) -> Unit) {
 
     return mapOf("result" to "success", "datetime" to datetime, "title" to title)
   }
+
+  /** Executes a YAML automation flow with safety guard checks. */
+  @Tool(
+    description =
+      "Runs a fallback automation flow in Maestro-style YAML. Use only when other tools cannot satisfy the request."
+  )
+  fun runAutomationFlow(
+    @ToolParam(
+      description =
+        "YAML flow with appId and steps. Example: appId: com.android.settings --- - launchApp - tapOn: \"Network\""
+    )
+    flowYaml: String,
+    @ToolParam(
+      description =
+        "Optional per-run safety consent token returned by a previous requires_confirmation response."
+    )
+    consentToken: String? = null,
+    @ToolParam(
+      description =
+        "Optional external correlation id to trace the run across logs and safety audit records."
+    )
+    correlationId: String? = null
+  ): Map<String, String> {
+    Log.d(TAG, "run automation flow: $flowYaml")
+    onFunctionCalled(
+      ExecuteFlowAction(
+        flowYaml = flowYaml,
+        consentToken = consentToken,
+        correlationId = correlationId,
+      )
+    )
+    return mapOf("result" to "accepted")
+  }
 }

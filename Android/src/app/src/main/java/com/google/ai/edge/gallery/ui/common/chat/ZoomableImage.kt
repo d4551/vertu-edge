@@ -39,7 +39,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.google.ai.edge.gallery.R
 import kotlin.math.max
 import kotlin.math.min
 import kotlinx.coroutines.awaitCancellation
@@ -125,7 +127,7 @@ fun ZoomableImage(
   ) {
     Image(
       bitmap = bitmap,
-      contentDescription = null,
+      contentDescription = stringResource(R.string.cd_zoomable_image),
       contentScale = contentScale,
       modifier =
         Modifier.align(Alignment.Center).graphicsLayer {

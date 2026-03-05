@@ -72,6 +72,7 @@ import com.google.ai.edge.gallery.data.DEFAULT_TEMPERATURE
 import com.google.ai.edge.gallery.data.DEFAULT_TOPK
 import com.google.ai.edge.gallery.data.DEFAULT_TOPP
 import com.google.ai.edge.gallery.data.IMPORTS_DIR
+import com.google.ai.edge.gallery.data.IMPORT_MODEL_TYPE_LLM
 import com.google.ai.edge.gallery.data.LabelConfig
 import com.google.ai.edge.gallery.data.NumberSliderConfig
 import com.google.ai.edge.gallery.data.SegmentedButtonConfig
@@ -161,8 +162,7 @@ fun ModelImportDialog(
         put(config.key.label, config.defaultValue)
       }
       put(ConfigKeys.NAME.label, fileName)
-      // TODO: support other types.
-      put(ConfigKeys.MODEL_TYPE.label, "LLM")
+      put(ConfigKeys.MODEL_TYPE.label, IMPORT_MODEL_TYPE_LLM)
 
       for ((key, value) in defaultValues) {
         put(key.label, value)
@@ -192,7 +192,7 @@ fun ModelImportDialog(
       ) {
         // Title.
         Text(
-          "Import Model",
+          stringResource(R.string.import_model_title),
           style = MaterialTheme.typography.titleLarge,
           modifier = Modifier.padding(bottom = 8.dp),
         )
@@ -211,7 +211,7 @@ fun ModelImportDialog(
           horizontalArrangement = Arrangement.End,
         ) {
           // Cancel button.
-          TextButton(onClick = { onDismiss() }) { Text("Cancel") }
+          TextButton(onClick = { onDismiss() }) { Text(stringResource(R.string.cancel)) }
 
           // Import button
           Button(
@@ -292,7 +292,7 @@ fun ModelImportDialog(
               onDone(importedModel)
             }
           ) {
-            Text("Import")
+            Text(stringResource(R.string.import_model))
           }
         }
       }
@@ -337,7 +337,7 @@ fun ModelImportingDialog(
       ) {
         // Title.
         Text(
-          "Import Model",
+          stringResource(R.string.import_model_title),
           style = MaterialTheme.typography.titleLarge,
           modifier = Modifier.padding(bottom = 8.dp),
         )
@@ -379,7 +379,7 @@ fun ModelImportingDialog(
             )
           }
           Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            Button(onClick = { onDismiss() }) { Text("Close") }
+            Button(onClick = { onDismiss() }) { Text(stringResource(R.string.close)) }
           }
         }
       }
@@ -397,54 +397,54 @@ private fun importModel(
   onProgress: (Float) -> Unit,
   onError: (String) -> Unit,
 ) {
-  // TODO: handle error.
   coroutineScope.launch(Dispatchers.IO) {
-    // Get the last component of the uri path as the imported file name.
-    val decodedUri = URLDecoder.decode(uri.toString(), StandardCharsets.UTF_8.name())
-    Log.d(TAG, "importing model from $decodedUri. File name: $fileName. File size: $fileSize")
-
-    // Create <app_external_dir>/imports if not exist.
-    val importsDir = File(context.getExternalFilesDir(null), IMPORTS_DIR)
-    if (!importsDir.exists()) {
-      importsDir.mkdirs()
-    }
-
-    // Import by copying the file over.
-    val outputFile = File(context.getExternalFilesDir(null), "$IMPORTS_DIR/$fileName")
-    val outputStream = FileOutputStream(outputFile)
-    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-    var bytesRead: Int
-    var lastSetProgressTs: Long = 0
-    var importedBytes = 0L
-    val inputStream = context.contentResolver.openInputStream(uri)
     try {
-      if (inputStream != null) {
-        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-          outputStream.write(buffer, 0, bytesRead)
-          importedBytes += bytesRead
+      val decodedUri = URLDecoder.decode(uri.toString(), StandardCharsets.UTF_8.name())
+      Log.d(TAG, "importing model from $decodedUri. File name: $fileName. File size: $fileSize")
 
-          // Report progress every 200 ms.
-          val curTs = System.currentTimeMillis()
-          if (curTs - lastSetProgressTs > 200) {
-            Log.d(TAG, "importing progress: $importedBytes, $fileSize")
-            lastSetProgressTs = curTs
-            if (fileSize != 0L) {
-              onProgress(importedBytes.toFloat() / fileSize.toFloat())
+      val externalFilesDir = context.getExternalFilesDir(null) ?: context.filesDir
+
+      val importsDir = File(externalFilesDir, IMPORTS_DIR)
+      if (!importsDir.exists() && !importsDir.mkdirs()) {
+        onError(context.getString(R.string.failed_to_import))
+        return@launch
+      }
+
+      val outputFile = File(externalFilesDir, "$IMPORTS_DIR/$fileName")
+      val inputStream = context.contentResolver.openInputStream(uri)
+      if (inputStream == null) {
+        onError(context.getString(R.string.failed_to_import))
+        return@launch
+      }
+
+      inputStream.use { input ->
+        FileOutputStream(outputFile).use { output ->
+          val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+          var bytesRead: Int
+          var lastSetProgressTs: Long = 0
+          var importedBytes = 0L
+          while (input.read(buffer).also { bytesRead = it } != -1) {
+            output.write(buffer, 0, bytesRead)
+            importedBytes += bytesRead
+
+            val curTs = System.currentTimeMillis()
+            if (curTs - lastSetProgressTs > 200) {
+              Log.d(TAG, "importing progress: $importedBytes, $fileSize")
+              lastSetProgressTs = curTs
+              if (fileSize != 0L) {
+                onProgress(importedBytes.toFloat() / fileSize.toFloat())
+              }
             }
           }
         }
       }
+      Log.d(TAG, "import done")
+      onProgress(1f)
+      onDone()
     } catch (e: Exception) {
-      e.printStackTrace()
-      onError(e.message ?: "Failed to import")
-      return@launch
-    } finally {
-      inputStream?.close()
-      outputStream.close()
+      Log.e(TAG, "Model import failed", e)
+      onError(e.message ?: context.getString(R.string.failed_to_import))
     }
-    Log.d(TAG, "import done")
-    onProgress(1f)
-    onDone()
   }
 }
 

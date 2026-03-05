@@ -37,7 +37,9 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.firebaseAnalytics
 import com.google.ai.edge.gallery.ui.theme.customColors
 
@@ -86,7 +88,7 @@ fun ClickableLink(
     modifier = modifier,
   ) {
     if (icon != null) {
-      Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
+      Icon(icon, contentDescription = stringResource(R.string.cd_link), modifier = Modifier.size(16.dp))
     }
     Text(
       text = annotatedText,

@@ -1,0 +1,12 @@
+{
+  "name": "vertu-edge",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "bun run --cwd control-plane typecheck && bun run --cwd tooling/vertu-flow-kit typecheck",
+    "typecheck:all": "bun run --cwd control-plane typecheck && bun run --cwd tooling/vertu-flow-kit typecheck",
+    "lint": "bun run --cwd control-plane lint && bun run --cwd tooling/vertu-flow-kit lint",
+    "lint:all": "bun run --cwd control-plane lint && bun run --cwd tooling/vertu-flow-kit lint",
+    "test": "bun run --cwd control-plane test && bun run --cwd tooling/vertu-flow-kit test"
+  }
+}

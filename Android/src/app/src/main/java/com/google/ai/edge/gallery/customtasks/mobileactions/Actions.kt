@@ -20,6 +20,7 @@ import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.FlashOff
 import androidx.compose.material.icons.outlined.FlashlightOn
+import androidx.compose.material.icons.outlined.Preview
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Wifi
@@ -34,6 +35,7 @@ enum class ActionType {
   ACTION_SHOW_LOCATION_ON_MAP,
   ACTION_OPEN_WIFI_SETTINGS,
   ACTION_CREATE_CALENDAR_EVENT,
+  ACTION_EXECUTE_FLOW,
 }
 
 data class FunctionCallDetails(
@@ -135,5 +137,30 @@ class CreateCalendarEventAction(val datetime: String, val title: String) :
       FunctionCallDetails(
         functionName = "createCalendarEvent",
         parameters = listOf(Pair("datetime", datetime), Pair("title", title)),
+      ),
+  )
+
+// Action to execute a fallback automation flow.
+class ExecuteFlowAction(
+  val flowYaml: String,
+  val consentToken: String?,
+  val correlationId: String?,
+) :
+  Action(
+    type = ActionType.ACTION_EXECUTE_FLOW,
+    icon = Icons.Outlined.Preview,
+    functionCallDetails =
+      FunctionCallDetails(
+        functionName = "runAutomationFlow",
+        parameters =
+          buildList {
+            add(Pair("flowYaml", flowYaml))
+            if (!consentToken.isNullOrBlank()) {
+              add(Pair("consentToken", consentToken))
+            }
+            if (!correlationId.isNullOrBlank()) {
+              add(Pair("correlationId", correlationId))
+            }
+          },
       ),
   )

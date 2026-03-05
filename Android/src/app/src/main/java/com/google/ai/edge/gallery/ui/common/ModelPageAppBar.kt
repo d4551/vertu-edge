@@ -108,9 +108,13 @@ fun ModelPageAppBar(
             task.icon ?: ImageVector.vectorResource(task.iconVectorResourceId!!),
             tint = tintColor,
             modifier = Modifier.size(24.dp),
-            contentDescription = null,
+            contentDescription = stringResource(R.string.cd_task_icon),
           )
-          Text(task.label, style = MaterialTheme.typography.titleMedium, color = tintColor)
+          Text(
+            if (task.labelResId != null) stringResource(task.labelResId) else task.label,
+            style = MaterialTheme.typography.titleMedium,
+            color = tintColor,
+          )
         }
 
         // Model chips pager.
@@ -210,7 +214,7 @@ fun ModelPageAppBar(
       modelConfigs.removeIf { it.key == ConfigKeys.RESET_CONVERSATION_TURN_COUNT }
     }
     ConfigDialog(
-      title = "Model configs",
+      title = stringResource(R.string.model_configs),
       configs = modelConfigs,
       initialValues = model.configValues,
       onDismissed = { showConfigDialog = false },

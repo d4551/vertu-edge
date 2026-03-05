@@ -101,7 +101,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val promptTemplateTypes: List<PromptTemplateType> = PromptTemplateType.entries
-private val TAB_TITLES = PromptTemplateType.entries.map { it.label }
 private val ICON_BUTTON_SIZE = 42.dp
 
 const val FULL_PROMPT_SWITCH_KEY = "full_prompt"
@@ -153,7 +152,7 @@ fun PromptTemplatesPanel(
   Column(modifier = modifier) {
     // Scrollable tab row for all prompt templates.
     PrimaryScrollableTabRow(selectedTabIndex = selectedTabIndex) {
-      TAB_TITLES.forEachIndexed { index, title ->
+      promptTemplateTypes.forEachIndexed { index, promptType ->
         Tab(
           selected = selectedTabIndex == index,
           enabled = !inProgress,
@@ -171,7 +170,7 @@ fun PromptTemplatesPanel(
           },
           text = {
             Text(
-              text = title,
+              text = stringResource(promptType.labelResId),
               modifier = Modifier.alpha(if (inProgress) 0.5f else 1f),
               color =
                 if (selectedTabIndex == index) MaterialTheme.colorScheme.primary
@@ -247,7 +246,7 @@ fun PromptTemplatesPanel(
                   disabledContainerColor = Color.Transparent,
                 ),
               textStyle = bodyLargeNarrow,
-              placeholder = { Text("Enter content") },
+              placeholder = { Text(stringResource(R.string.enter_content)) },
               modifier =
                 Modifier.padding(bottom = 40.dp).focusRequester(focusRequester).semantics {
                   contentDescription = cdContentInput
@@ -292,17 +291,17 @@ fun PromptTemplatesPanel(
               if (inputEditorValues[FULL_PROMPT_SWITCH_KEY] as Boolean) {
                 Icon(
                   imageVector = Icons.Rounded.Visibility,
-                  contentDescription = null,
+                  contentDescription = stringResource(R.string.cd_preview_prompt),
                   modifier = Modifier.size(FilterChipDefaults.IconSize),
                 )
               } else {
                 Icon(
                   imageVector = Icons.Rounded.VisibilityOff,
-                  contentDescription = null,
+                  contentDescription = stringResource(R.string.cd_hide_preview),
                   modifier = Modifier.size(FilterChipDefaults.IconSize).alpha(0.3f),
                 )
               }
-              Text("Preview prompt", style = MaterialTheme.typography.labelMedium)
+              Text(stringResource(R.string.preview_prompt), style = MaterialTheme.typography.labelMedium)
             }
           }
 
@@ -416,7 +415,7 @@ fun PromptTemplatesPanel(
       Column(modifier = Modifier.padding(bottom = 16.dp)) {
         // Title
         Text(
-          "Select an example",
+          stringResource(R.string.select_an_example),
           modifier = Modifier.fillMaxWidth().padding(16.dp),
           style = MaterialTheme.typography.titleLarge,
         )
@@ -445,7 +444,7 @@ fun PromptTemplatesPanel(
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-              Icon(Icons.Outlined.Description, contentDescription = null)
+              Icon(Icons.Outlined.Description, contentDescription = stringResource(R.string.cd_description))
               Text(
                 prompt,
                 maxLines = if (isExpanded) Int.MAX_VALUE else 3,

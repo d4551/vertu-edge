@@ -166,6 +166,8 @@ fun ModelList(
     ) {
       // Task header area.
       item(key = "taskHeader") {
+        val taskLabel =
+          if (task.labelResId != null) stringResource(task.labelResId) else task.label
         Column(
           verticalArrangement = Arrangement.spacedBy(8.dp),
           horizontalAlignment = Alignment.CenterHorizontally,
@@ -178,11 +180,11 @@ fun ModelList(
           Box(
             modifier =
               Modifier.offset(x = (20f * (1f - taskIconProgress)).dp).semantics {
-                contentDescription = task.label
+                contentDescription = taskLabel
               }
           ) {
             RevealingText(
-              text = task.label,
+              text = taskLabel,
               style =
                 headlineLargeMedium.copy(
                   brush = Brush.linearGradient(getTaskBgGradientColors(task = task))
@@ -191,7 +193,7 @@ fun ModelList(
               animationProgress = taskIconProgress,
             )
             RevealingText(
-              text = task.label,
+              text = taskLabel,
               style = headlineLargeMedium,
               textAlign = TextAlign.Center,
               animationProgress = taskLabelProgress,

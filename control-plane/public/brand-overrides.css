@@ -1,0 +1,281 @@
+/**
+ * Vertu brand overrides for control plane UI.
+ * Maps DaisyUI semantic tokens to Vertu palette from brand guide.
+ * Load after daisyui.css so these overrides take precedence.
+ */
+
+/* Vertu palette (hex) for reference; DaisyUI uses oklch */
+:root {
+  --v-black: #080808;
+  --v-charcoal: #111111;
+  --v-gold: #D4B978;
+  --v-gold-deep: #C4A55E;
+  --v-gold-light: #E8D9A8;
+  --v-ruby: #D4364E;
+  --v-cream: #F2EDE5;
+  --v-ivory: #FAF7F2;
+  --v-titanium: #B5AFA7;
+  --v-ink: #1A1816;
+}
+
+/* Light theme: cream/ivory base, WCAG 2.2 AA compliant gold accent (4.5:1 on base) */
+[data-theme="light"] {
+  color-scheme: light;
+  --color-base-100: oklch(98% 0.005 75);
+  --color-base-200: oklch(95% 0.01 75);
+  --color-base-300: oklch(92% 0.012 75);
+  --color-base-content: oklch(18% 0.01 75);
+  --color-primary: oklch(52% 0.14 85);
+  --color-primary-content: oklch(98% 0.01 75);
+  --color-secondary: oklch(48% 0.14 85);
+  --color-secondary-content: oklch(98% 0.01 75);
+  --color-accent: oklch(52% 0.14 85);
+  --color-accent-content: oklch(98% 0.01 75);
+  --color-neutral: oklch(25% 0.01 75);
+  --color-neutral-content: oklch(95% 0.01 75);
+  --color-error: oklch(55% 0.2 15);
+  --color-error-content: oklch(98% 0.01 15);
+}
+
+/* Dark theme: charcoal/black base, WCAG 2.2 AA compliant gold accent */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --color-base-100: oklch(8% 0 0);
+  --color-base-200: oklch(5% 0 0);
+  --color-base-300: oklch(12% 0 0);
+  --color-base-content: oklch(95% 0.01 75);
+  --color-primary: oklch(72% 0.12 85);
+  --color-primary-content: oklch(12% 0.02 85);
+  --color-secondary: oklch(65% 0.12 85);
+  --color-secondary-content: oklch(12% 0.02 85);
+  --color-accent: oklch(72% 0.12 85);
+  --color-accent-content: oklch(12% 0.02 85);
+  --color-neutral: oklch(25% 0.01 75);
+  --color-neutral-content: oklch(95% 0.01 75);
+  --color-error: oklch(55% 0.2 15);
+  --color-error-content: oklch(98% 0.01 15);
+}
+
+/* Luxury theme: gold-on-dark aesthetic, WCAG 2.2 AA compliant */
+[data-theme="luxury"] {
+  color-scheme: dark;
+  --color-base-100: oklch(6% 0 0);
+  --color-base-200: oklch(4% 0 0);
+  --color-base-300: oklch(10% 0 0);
+  --color-base-content: oklch(95% 0.01 75);
+  --color-primary: oklch(72% 0.12 85);
+  --color-primary-content: oklch(12% 0.02 85);
+  --color-secondary: oklch(65% 0.12 85);
+  --color-secondary-content: oklch(12% 0.02 85);
+  --color-accent: oklch(78% 0.1 85);
+  --color-accent-content: oklch(12% 0.02 85);
+  --color-neutral: oklch(20% 0.01 75);
+  --color-neutral-content: oklch(92% 0.01 75);
+  --color-error: oklch(55% 0.2 15);
+  --color-error-content: oklch(98% 0.01 15);
+}
+
+/* Typography: Vertu brand fonts */
+body {
+  font-family: "Syne", system-ui, -apple-system, sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Instrument Serif", Georgia, serif;
+}
+
+code, pre, .font-mono {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+/* WCAG 2.2+ compliance: focus appearance (2.4.11, 2.4.15) */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--rounded-btn, 0.25rem);
+}
+
+/* WCAG 2.2: minimum touch target (2.5.5 Target Size) - 44x44px for primary, 24x24 for compact */
+.menu a,
+.menu button,
+.navbar .btn {
+  min-block-size: 2.75rem; /* 44px */
+  min-inline-size: 2.75rem;
+  padding-block: 0.5rem;
+  padding-inline: 0.75rem;
+}
+
+/* WCAG 2.5.5: all interactive controls minimum 44x44px touch target */
+.btn.btn-xs,
+.btn.btn-sm {
+  min-block-size: 2.75rem; /* 44px */
+  min-inline-size: 2.75rem;
+}
+
+/* Join groups: buttons must match input/select height for alignment */
+.join .btn.btn-sm.join-item {
+  min-block-size: 0;
+  height: auto;
+  align-self: stretch;
+}
+
+/* Compact non-button controls: 24x24px minimum (checkboxes/radios are typically grouped with labels) */
+input[type="checkbox"],
+input[type="radio"] {
+  min-block-size: 1.5rem;
+  min-inline-size: 1.5rem;
+}
+
+/* Ensure sufficient spacing between adjacent targets */
+.menu li + li {
+  margin-block-start: 0.125rem;
+}
+
+/* Responsive layout: prevent overflow, enable proper scrolling */
+.drawer-content {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+/* Scroll-margin for anchor links: content visible below sticky navbar */
+[id^="card-"] {
+  scroll-margin-top: 5rem;
+}
+
+/* Nested layout: flex/grid children must not overflow */
+.card-body,
+.form-control,
+.space-y-3 > *,
+.space-y-4 > * {
+  min-width: 0;
+}
+
+/* Overflow-safe tabs container */
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+/* Join groups: stack on xs, row on sm+ */
+.join {
+  flex-wrap: wrap;
+}
+
+/* WCAG 2.2: Brand text uses semantic base-content for contrast; primary accent via border */
+.brand-text {
+  color: var(--color-base-content);
+}
+.brand-text-accent {
+  border-bottom: 2px solid var(--color-primary);
+  padding-bottom: 0.125rem;
+}
+
+/* Transitions: cards and buttons */
+.card {
+  transition: box-shadow 0.2s ease, transform 0.15s ease;
+}
+.card:hover {
+  box-shadow: 0 8px 25px -5px color-mix(in oklch, var(--color-primary) 8%, transparent);
+}
+.btn {
+  transition: all 0.15s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .btn {
+    transition: none;
+  }
+}
+
+/* Card title: enterprise hierarchy alignment */
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Sidebar menu: hover and active states */
+.menu a:hover {
+  background: color-mix(in oklch, var(--color-primary) 10%, transparent);
+}
+.menu a.active,
+.menu a:where(.active) {
+  background: color-mix(in oklch, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+  font-weight: 600;
+  border-inline-start: 3px solid var(--color-primary);
+}
+
+/* Enterprise divider: thinner, subtler */
+.divider {
+  opacity: 0.6;
+}
+
+/* Accordion provider cards: refined borders and spacing */
+.collapse.collapse-arrow {
+  border-radius: var(--rounded-box, 0.5rem);
+}
+.collapse-title {
+  min-height: 3rem;
+}
+.collapse-content {
+  padding-block-start: 0;
+}
+
+/* Form labels: consistent enterprise typography */
+.label-text {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+/* Validator hints: subtle but accessible */
+.validator-hint {
+  color: color-mix(in oklch, var(--color-base-content) 55%, transparent);
+  margin-block-start: 0.25rem;
+}
+
+/* Badge refinements: crisper badges */
+.badge {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* Floating action button: bottom-right fixed position */
+.fab {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 50;
+}
+
+#floating-chat-modal .modal-box {
+  display: flex;
+  flex-direction: column;
+}
+#floating-chat-modal .join {
+  display: flex;
+  align-items: stretch;
+}
+#floating-chat-modal .join .btn {
+  flex-shrink: 0;
+}
+
+/* Quick Chat modal: hide placeholder when messages exist */
+[id^="chat-messages-"]:has(.chat) .chat-placeholder {
+  display: none;
+}
+
+/* Quick Chat: viewport-relative max-height for small screens.
+ * Intentionally overrides Tailwind's max-h-60 (15rem/240px) on [id^="chat-messages-"] elements
+ * to provide a viewport-aware constraint (min of 60vh or 20rem) that better adapts to small screens.
+ * Specificity: attribute selector [0,1,0] beats class selector [0,1,0] by source order -- intentional. */
+[id^="chat-messages-"] {
+  max-height: min(60vh, 20rem); /* intentional override of max-h-60 */
+}
+
+/* Footer: refined enterprise styling */
+footer.footer {
+  border-top: 1px solid color-mix(in oklch, var(--color-base-content) 8%, transparent);
+}

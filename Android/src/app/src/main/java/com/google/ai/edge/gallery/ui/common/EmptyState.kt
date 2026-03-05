@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.google.ai.edge.gallery.R
 
 data class EmptyStateButtonConfig(
   @StringRes val buttonLabelResId: Int,
@@ -59,7 +60,7 @@ fun EmptyState(
   ) {
     Icon(
       icon,
-      contentDescription = null,
+      contentDescription = stringResource(R.string.cd_empty_state_icon),
       modifier = Modifier.size(56.dp),
       tint = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -84,7 +85,7 @@ fun EmptyState(
           if (buttonConfig.buttonIcon != null) {
             Icon(
               buttonConfig.buttonIcon,
-              contentDescription = null,
+              contentDescription = stringResource(R.string.cd_action_button),
               modifier = Modifier.padding(end = 8.dp).size(20.dp),
             )
           }

@@ -372,8 +372,8 @@ fun MessageInputText(
                           verticalAlignment = Alignment.CenterVertically,
                           horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                          Icon(Icons.Rounded.PhotoCamera, contentDescription = null)
-                          Text("Take a picture")
+                          Icon(Icons.Rounded.PhotoCamera, contentDescription = stringResource(R.string.take_a_picture))
+                          Text(stringResource(R.string.take_a_picture))
                         }
                       },
                       enabled = enableAddImageMenuItems,
@@ -404,8 +404,8 @@ fun MessageInputText(
                           verticalAlignment = Alignment.CenterVertically,
                           horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                          Icon(Icons.Rounded.Photo, contentDescription = null)
-                          Text("Pick from album")
+                          Icon(Icons.Rounded.Photo, contentDescription = stringResource(R.string.pick_from_album))
+                          Text(stringResource(R.string.pick_from_album))
                         }
                       },
                       enabled = enableAddImageMenuItems,
@@ -427,8 +427,8 @@ fun MessageInputText(
                           verticalAlignment = Alignment.CenterVertically,
                           horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                          Icon(Icons.Rounded.Mic, contentDescription = null)
-                          Text("Record audio clip")
+                          Icon(Icons.Rounded.Mic, contentDescription = stringResource(R.string.record_audio_clip))
+                          Text(stringResource(R.string.record_audio_clip))
                         }
                       },
                       enabled = enableRecordAudioClipMenuItems,
@@ -459,8 +459,8 @@ fun MessageInputText(
                           verticalAlignment = Alignment.CenterVertically,
                           horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                          Icon(Icons.Rounded.AudioFile, contentDescription = null)
-                          Text("Pick wav file")
+                          Icon(Icons.Rounded.AudioFile, contentDescription = stringResource(R.string.pick_wav_file))
+                          Text(stringResource(R.string.pick_wav_file))
                         }
                       },
                       enabled = enableRecordAudioClipMenuItems,
@@ -495,8 +495,8 @@ fun MessageInputText(
                           verticalAlignment = Alignment.CenterVertically,
                           horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                          Icon(Icons.Rounded.PostAdd, contentDescription = null)
-                          Text("Prompt templates")
+                          Icon(Icons.Rounded.PostAdd, contentDescription = stringResource(R.string.prompt_templates))
+                          Text(stringResource(R.string.prompt_templates))
                         }
                       },
                       onClick = {
@@ -512,8 +512,8 @@ fun MessageInputText(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                       ) {
-                        Icon(Icons.Rounded.History, contentDescription = null)
-                        Text("Input history")
+                        Icon(Icons.Rounded.History, contentDescription = stringResource(R.string.input_history))
+                        Text(stringResource(R.string.input_history))
                       }
                     },
                     onClick = {

@@ -95,7 +95,7 @@ fun DownloadModelPanel(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
           ) {
-            Icon(Icons.Rounded.BarChart, contentDescription = null, tint = textColor)
+            Icon(Icons.Rounded.BarChart, contentDescription = stringResource(R.string.cd_bar_chart), tint = textColor)
 
             if (isExpanded) {
               Text(

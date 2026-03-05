@@ -16,7 +16,7 @@
 
 package com.google.ai.edge.gallery.ui.navigation
 
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 
 import android.os.Bundle
 import android.util.Log
@@ -65,6 +65,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.google.ai.edge.gallery.BuildConfig
 import com.google.ai.edge.gallery.GalleryEvent
 import com.google.ai.edge.gallery.customtasks.common.CustomTaskData
 import com.google.ai.edge.gallery.customtasks.common.CustomTaskDataForBuiltinTask
@@ -82,6 +83,7 @@ import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatusType
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManager
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 private const val TAG = "AGGalleryNavGraph"
@@ -176,8 +178,10 @@ fun GalleryNavHost(
   NavHost(
     navController = navController,
     startDestination = ROUTE_HOMESCREEN,
-    enterTransition = { EnterTransition.None },
-    exitTransition = { ExitTransition.None },
+    enterTransition = { slideEnter() },
+    exitTransition = { slideExit() },
+    popEnterTransition = { slideEnter() },
+    popExitTransition = { slideExit() },
   ) {
     // Home screen.
     composable(route = ROUTE_HOMESCREEN) {
@@ -199,23 +203,7 @@ fun GalleryNavHost(
     }
 
     // Model list.
-    composable(
-      route = ROUTE_MODEL_LIST,
-      enterTransition = {
-        if (initialState.destination.route == ROUTE_HOMESCREEN) {
-          slideEnter()
-        } else {
-          EnterTransition.None
-        }
-      },
-      exitTransition = {
-        if (targetState.destination.route == ROUTE_HOMESCREEN) {
-          slideExit()
-        } else {
-          ExitTransition.None
-        }
-      },
-    ) {
+    composable(route = ROUTE_MODEL_LIST) {
       pickedTask?.let {
         ModelManager(
           viewModel = modelManagerViewModel,
@@ -240,8 +228,6 @@ fun GalleryNavHost(
           navArgument("taskId") { type = NavType.StringType },
           navArgument("modelName") { type = NavType.StringType },
         ),
-      enterTransition = { slideEnter() },
-      exitTransition = { slideExit() },
     ) { backStackEntry ->
       val modelName = backStackEntry.arguments?.getString("modelName") ?: ""
       val taskId = backStackEntry.arguments?.getString("taskId") ?: ""
@@ -357,8 +343,6 @@ fun GalleryNavHost(
     composable(
       route = "$ROUTE_BENCHMARK/{modelName}",
       arguments = listOf(navArgument("modelName") { type = NavType.StringType }),
-      enterTransition = { slideEnter() },
-      exitTransition = { slideExit() },
     ) { backStackEntry ->
       val modelName = backStackEntry.arguments?.getString("modelName") ?: ""
 
@@ -375,13 +359,22 @@ fun GalleryNavHost(
     }
   }
 
-  // Handle incoming intents for deep links
+  // Handle incoming intents for deep links.
+  // Wrapped in LaunchedEffect so intent.data is not read (and mutated) during composition,
+  // which would cause side effects on every recomposition.
   val intent = androidx.activity.compose.LocalActivity.current?.intent
-  val data = intent?.data
-  if (data != null) {
+  LaunchedEffect(Unit) {
+    val data = intent?.data ?: return@LaunchedEffect
     intent.data = null
+    // Wait for the model allowlist to finish loading before attempting navigation,
+    // so deep links that arrive before models are ready are not silently dropped.
+    if (modelManagerViewModel.uiState.value.loadingModelAllowlist) {
+      modelManagerViewModel.uiState.first { !it.loadingModelAllowlist }
+    }
     Log.d(TAG, "navigation link clicked: $data")
-    if (data.toString().startsWith("com.google.ai.edge.gallery://model/")) {
+    val deepLinkModelPrefix = "${BuildConfig.VERTU_DEEP_LINK_SCHEME}://model/"
+    val deepLinkGlobalModelManager = "${BuildConfig.VERTU_DEEP_LINK_SCHEME}://global_model_manager"
+    if (data.toString().startsWith(deepLinkModelPrefix)) {
       if (data.pathSegments.size >= 2) {
         val taskId = data.pathSegments.get(data.pathSegments.size - 2)
         val modelName = data.pathSegments.last()
@@ -391,7 +384,7 @@ fun GalleryNavHost(
       } else {
         Log.e(TAG, "Malformed deep link URI received: $data")
       }
-    } else if (data.toString() == "com.google.ai.edge.gallery://global_model_manager") {
+    } else if (data.toString() == deepLinkGlobalModelManager) {
       navController.navigate(ROUTE_MODEL_MANAGER)
     }
   }

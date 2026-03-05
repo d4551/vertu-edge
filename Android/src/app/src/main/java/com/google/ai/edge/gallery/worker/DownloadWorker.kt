@@ -24,10 +24,13 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.Data
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
+import com.google.ai.edge.gallery.data.HuggingFaceModelManager
 import com.google.ai.edge.gallery.data.KEY_MODEL_COMMIT_HASH
 import com.google.ai.edge.gallery.data.KEY_MODEL_DOWNLOAD_ACCESS_TOKEN
 import com.google.ai.edge.gallery.data.KEY_MODEL_DOWNLOAD_ERROR_MESSAGE
@@ -44,34 +47,38 @@ import com.google.ai.edge.gallery.data.KEY_MODEL_START_UNZIPPING
 import com.google.ai.edge.gallery.data.KEY_MODEL_TOTAL_BYTES
 import com.google.ai.edge.gallery.data.KEY_MODEL_UNZIPPED_DIR
 import com.google.ai.edge.gallery.data.KEY_MODEL_URL
-import com.google.ai.edge.gallery.data.TMP_FILE_EXT
+import com.google.ai.edge.gallery.data.Model
+import com.google.ai.edge.gallery.data.ModelDownloadResult
+import com.google.ai.edge.gallery.R
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedInject
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
+import kotlin.math.min
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 private const val TAG = "AGDownloadWorker"
 
-data class UrlAndFileName(val url: String, val fileName: String)
-
 private const val FOREGROUND_NOTIFICATION_CHANNEL_ID = "model_download_channel_foreground"
 private var channelCreated = false
 
-class DownloadWorker(context: Context, params: WorkerParameters) :
-  CoroutineWorker(context, params) {
-  private val externalFilesDir = context.getExternalFilesDir(null)
+private data class DownloadFileSpec(val url: String, val fileName: String, val isPrimary: Boolean)
 
+@HiltWorker
+class DownloadWorker
+@AssistedInject
+constructor(
+  @Assisted context: Context,
+  @Assisted params: WorkerParameters,
+  private val huggingFaceModelManager: HuggingFaceModelManager,
+) : CoroutineWorker(context, params) {
   private val notificationManager =
     context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-  // Unique notification id.
   private val notificationId: Int = params.id.hashCode()
 
   init {
@@ -92,237 +99,241 @@ class DownloadWorker(context: Context, params: WorkerParameters) :
 
   override suspend fun doWork(): Result {
     val fileUrl = inputData.getString(KEY_MODEL_URL)
-    val modelName = inputData.getString(KEY_MODEL_NAME) ?: "Model"
-    val version = inputData.getString(KEY_MODEL_COMMIT_HASH)!!
     val fileName = inputData.getString(KEY_MODEL_DOWNLOAD_FILE_NAME)
-    val modelDir = inputData.getString(KEY_MODEL_DOWNLOAD_MODEL_DIR)!!
+    val modelName = inputData.getString(KEY_MODEL_NAME) ?: "Model"
+    val modelDir = inputData.getString(KEY_MODEL_DOWNLOAD_MODEL_DIR) ?: ""
+    val version = inputData.getString(KEY_MODEL_COMMIT_HASH) ?: ""
+    val totalBytes = inputData.getLong(KEY_MODEL_TOTAL_BYTES, 0L)
     val isZip = inputData.getBoolean(KEY_MODEL_IS_ZIP, false)
     val unzippedDir = inputData.getString(KEY_MODEL_UNZIPPED_DIR)
+    val accessToken = inputData.getString(KEY_MODEL_DOWNLOAD_ACCESS_TOKEN)
     val extraDataFileUrls = inputData.getString(KEY_MODEL_EXTRA_DATA_URLS)?.split(",") ?: listOf()
     val extraDataFileNames =
       inputData.getString(KEY_MODEL_EXTRA_DATA_DOWNLOAD_FILE_NAMES)?.split(",") ?: listOf()
-    val totalBytes = inputData.getLong(KEY_MODEL_TOTAL_BYTES, 0L)
-    val accessToken = inputData.getString(KEY_MODEL_DOWNLOAD_ACCESS_TOKEN)
 
     return withContext(Dispatchers.IO) {
       if (fileUrl == null || fileName == null) {
-        Result.failure()
-      } else {
-        return@withContext try {
-          // Set the worker as a foreground service immediately.
-          setForeground(createForegroundInfo(progress = 0, modelName = modelName))
+        return@withContext failureResult("Missing modelUrl or modelFileName input")
+      }
 
-          // Collect data for all files.
-          val allFiles: MutableList<UrlAndFileName> = mutableListOf()
-          allFiles.add(UrlAndFileName(url = fileUrl, fileName = fileName))
-          for (index in extraDataFileUrls.indices) {
-            allFiles.add(
-              UrlAndFileName(url = extraDataFileUrls[index], fileName = extraDataFileNames[index])
+      val externalFilesDir = applicationContext.getExternalFilesDir(null) ?: applicationContext.filesDir
+      try {
+        setForeground(createForegroundInfo(progress = 0, modelName = modelName))
+
+        val downloadSpecs = buildDownloadSpecs(fileUrl, fileName, extraDataFileUrls, extraDataFileNames)
+        val outputBaseDir = File(externalFilesDir, listOf(modelDir, version).joinToString(File.separator))
+        if (!outputBaseDir.exists()) {
+          outputBaseDir.mkdirs()
+        }
+
+        Log.d(TAG, "Downloading ${downloadSpecs.size} file(s) for model '$modelName'")
+        var downloadedBytes = 0L
+        val downloadSpeedBytes = mutableListOf<Long>()
+        val downloadSpeedLatency = mutableListOf<Long>()
+
+        var mainModelFile: File? = null
+
+        for ((index, spec) in downloadSpecs.withIndex()) {
+          val destinationFile = File(outputBaseDir, spec.fileName)
+          val modelForDownload =
+            createDownloadModel(
+              name = modelName,
+              fileName = spec.fileName,
+              url = spec.url,
+              dirVersion = version,
+              isPrimary = spec.isPrimary,
+              isZip = isZip && index == 0 && spec.isPrimary,
+              totalBytes = if (spec.isPrimary) totalBytes else 0L,
             )
+
+          if (index == 0) {
+            mainModelFile = destinationFile
           }
-          Log.d(TAG, "About to download: $allFiles")
 
-          // Download them in sequence.
-          // TODO: maybe consider downloading them in parallel.
-          var downloadedBytes = 0L
-          val bytesReadSizeBuffer: MutableList<Long> = mutableListOf()
-          val bytesReadLatencyBuffer: MutableList<Long> = mutableListOf()
-          for (file in allFiles) {
-            val url = URL(file.url)
+          var lastSetProgressTs = 0L
+          var bytesSinceLastSetProgress = 0L
+          var previousReceivedBytes = 0L
+          val bytesDownloadedBeforeThisFile = downloadedBytes
 
-            val connection = url.openConnection() as HttpURLConnection
-            if (accessToken != null) {
-              Log.d(TAG, "Using access token: ${accessToken.subSequence(0, 10)}...")
-              connection.setRequestProperty("Authorization", "Bearer $accessToken")
-            }
+          val result = huggingFaceModelManager.downloadModel(
+            model = modelForDownload,
+            destination = destinationFile,
+            token = accessToken,
+            onProgress = { progress ->
+              val fileDownloadedBytes = progress.receivedBytes
+              val incrementalBytes = maxOf(0L, fileDownloadedBytes - previousReceivedBytes)
+              previousReceivedBytes = fileDownloadedBytes
+              val totalDownloaded = bytesDownloadedBeforeThisFile + fileDownloadedBytes
 
-            // Prepare output file's dir.
-            val outputDir =
-              File(
-                applicationContext.getExternalFilesDir(null),
-                listOf(modelDir, version).joinToString(separator = File.separator),
-              )
-            if (!outputDir.exists()) {
-              outputDir.mkdirs()
-            }
-
-            // Read the tmp file and see if it is partially downloaded.
-            val outputTmpFile =
-              File(
-                applicationContext.getExternalFilesDir(null),
-                listOf(modelDir, version, "${file.fileName}.$TMP_FILE_EXT")
-                  .joinToString(separator = File.separator),
-              )
-            val outputFileBytes = outputTmpFile.length()
-            if (outputFileBytes > 0) {
-              Log.d(
-                TAG,
-                "File '${outputTmpFile.name}' partial size: ${outputFileBytes}. Trying to resume download",
-              )
-              connection.setRequestProperty("Range", "bytes=${outputFileBytes}-")
-              // Force the server to send non-compressed data to make download resuming work.
-              connection.setRequestProperty("Accept-Encoding", "identity")
-            }
-            connection.connect()
-            Log.d(TAG, "response code: ${connection.responseCode}")
-
-            if (
-              connection.responseCode == HttpURLConnection.HTTP_OK ||
-                connection.responseCode == HttpURLConnection.HTTP_PARTIAL
-            ) {
-              val contentRange = connection.getHeaderField("Content-Range")
-
-              if (contentRange != null) {
-                // Parse the Content-Range header
-                val rangeParts = contentRange.substringAfter("bytes ").split("/")
-                val byteRange = rangeParts[0].split("-")
-                val startByte = byteRange[0].toLong()
-                val endByte = byteRange[1].toLong()
-
-                Log.d(
-                  TAG,
-                  "Content-Range: $contentRange. Start bytes: ${startByte}, end bytes: $endByte",
-                )
-
-                downloadedBytes += startByte
-              } else {
-                Log.d(TAG, "Download starts from beginning.")
-              }
-            } else {
-              throw IOException("HTTP error code: ${connection.responseCode}")
-            }
-
-            val inputStream = connection.inputStream
-            val outputStream = FileOutputStream(outputTmpFile, true /* append */)
-
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            var bytesRead: Int
-            var lastSetProgressTs: Long = 0
-            var deltaBytes = 0L
-            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-              outputStream.write(buffer, 0, bytesRead)
-              downloadedBytes += bytesRead
-              deltaBytes += bytesRead
-
-              // Report progress every 200 ms.
-              val curTs = System.currentTimeMillis()
-              if (curTs - lastSetProgressTs > 200) {
-                // Calculate download rate.
+              bytesSinceLastSetProgress += incrementalBytes
+              downloadedBytes = totalDownloaded
+              val now = System.currentTimeMillis()
+              if (now - lastSetProgressTs > 200) {
                 var bytesPerMs = 0f
                 if (lastSetProgressTs != 0L) {
-                  if (bytesReadSizeBuffer.size == 5) {
-                    bytesReadSizeBuffer.removeAt(0)
+                  if (downloadSpeedBytes.size == 5) {
+                    downloadSpeedBytes.removeAt(0)
                   }
-                  bytesReadSizeBuffer.add(deltaBytes)
-                  if (bytesReadLatencyBuffer.size == 5) {
-                    bytesReadLatencyBuffer.removeAt(0)
+                  if (downloadSpeedLatency.size == 5) {
+                    downloadSpeedLatency.removeAt(0)
                   }
-                  bytesReadLatencyBuffer.add(curTs - lastSetProgressTs)
-                  deltaBytes = 0L
-                  bytesPerMs = bytesReadSizeBuffer.sum().toFloat() / bytesReadLatencyBuffer.sum()
+                  downloadSpeedBytes.add(bytesSinceLastSetProgress)
+                  downloadSpeedLatency.add(now - lastSetProgressTs)
+
+                  if (downloadSpeedLatency.sum() > 0L) {
+                    bytesPerMs = downloadSpeedBytes.sum().toFloat() / downloadSpeedLatency.sum()
+                  }
+                  bytesSinceLastSetProgress = 0L
                 }
 
-                // Calculate remaining seconds
                 var remainingMs = 0f
                 if (bytesPerMs > 0f && totalBytes > 0L) {
-                  remainingMs = (totalBytes - downloadedBytes) / bytesPerMs
+                  remainingMs = (totalBytes - totalDownloaded) / bytesPerMs
                 }
 
+                val safeTotalBytes = maxOf(totalBytes, 1L)
+                val progressPercent = ((totalDownloaded * 100) / safeTotalBytes).toInt()
+                val rateBytesPerSecond = (bytesPerMs * 1000).toLong()
                 setProgress(
                   Data.Builder()
                     .putLong(KEY_MODEL_DOWNLOAD_RECEIVED_BYTES, downloadedBytes)
-                    .putLong(KEY_MODEL_DOWNLOAD_RATE, (bytesPerMs * 1000).toLong())
+                    .putLong(KEY_MODEL_DOWNLOAD_RATE, rateBytesPerSecond)
                     .putLong(KEY_MODEL_DOWNLOAD_REMAINING_MS, remainingMs.toLong())
                     .build()
                 )
                 setForeground(
-                  createForegroundInfo(
-                    progress = (downloadedBytes * 100 / totalBytes).toInt(),
-                    modelName = modelName,
-                  )
+                  createForegroundInfo(progress = min(progressPercent, 100), modelName = modelName)
                 )
-                Log.d(TAG, "downloadedBytes: $downloadedBytes")
-                lastSetProgressTs = curTs
+                Log.d(TAG, "downloadedBytes: $downloadedBytes, rateBps: $rateBytesPerSecond")
+                lastSetProgressTs = now
               }
+            },
+          )
+
+          when (result) {
+            is ModelDownloadResult.Success -> {
+              downloadedBytes = bytesDownloadedBeforeThisFile + result.file.length()
+              setProgress(
+                workDataOf(
+                  KEY_MODEL_DOWNLOAD_RECEIVED_BYTES to downloadedBytes,
+                  KEY_MODEL_DOWNLOAD_RATE to 0L,
+                  KEY_MODEL_DOWNLOAD_REMAINING_MS to 0L,
+                )
+              )
             }
 
-            outputStream.close()
-            inputStream.close()
-
-            // Rename the tmp file to the original file name by removing the tmp file ext.
-            val originalFilePath = outputTmpFile.absolutePath.replace(".$TMP_FILE_EXT", "")
-            val originalFile = File(originalFilePath)
-            if (originalFile.exists()) {
-              originalFile.delete()
-            }
-            outputTmpFile.renameTo(originalFile)
-            Log.d(TAG, "Download done")
-
-            // Unzip if the downloaded file is a zip.
-            if (isZip && unzippedDir != null) {
-              setProgress(Data.Builder().putBoolean(KEY_MODEL_START_UNZIPPING, true).build())
-
-              // Prepare target dir.
-              val destDir =
-                File(
-                  externalFilesDir,
-                  listOf(modelDir, version, unzippedDir).joinToString(File.separator),
-                )
-              if (!destDir.exists()) {
-                destDir.mkdirs()
-              }
-
-              // Unzip.
-              val unzipBuffer = ByteArray(4096)
-              val zipFilePath =
-                "${externalFilesDir}${File.separator}$modelDir${File.separator}$version${File.separator}${fileName}"
-              val zipIn = ZipInputStream(BufferedInputStream(FileInputStream(zipFilePath)))
-              var zipEntry: ZipEntry? = zipIn.nextEntry
-
-              while (zipEntry != null) {
-                val filePath = destDir.absolutePath + File.separator + zipEntry.name
-
-                // Extract files.
-                if (!zipEntry.isDirectory) {
-                  // extract file
-                  val bos = FileOutputStream(filePath)
-                  bos.use { curBos ->
-                    var len: Int
-                    while (zipIn.read(unzipBuffer).also { len = it } > 0) {
-                      curBos.write(unzipBuffer, 0, len)
-                    }
-                  }
-                }
-                // Create dir.
-                else {
-                  val dir = File(filePath)
-                  dir.mkdirs()
-                }
-
-                zipIn.closeEntry()
-                zipEntry = zipIn.nextEntry
-              }
-              zipIn.close()
-
-              // Delete the original file.
-              val zipFile = File(zipFilePath)
-              zipFile.delete()
+            is ModelDownloadResult.Failure -> {
+              return@withContext failureResult("${result.code}: ${result.message}")
             }
           }
-          Result.success()
-        } catch (e: IOException) {
-          Log.e(TAG, e.message, e)
-          Result.failure(
-            Data.Builder().putString(KEY_MODEL_DOWNLOAD_ERROR_MESSAGE, e.message).build()
+        }
+
+        if (isZip && unzippedDir != null && mainModelFile != null) {
+          unzipModelFile(
+            mainModelFile = mainModelFile,
+            outputBaseDir = outputBaseDir,
+            unzippedDir = unzippedDir,
           )
         }
+
+        Result.success()
+      } catch (e: Exception) {
+        Log.e(TAG, "Download failed", e)
+        failureResult(e.message ?: "Unknown download error")
       }
     }
   }
 
   override suspend fun getForegroundInfo(): ForegroundInfo {
-    // Initial progress is 0
-    return createForegroundInfo(0)
+    val modelName = inputData.getString(KEY_MODEL_NAME) ?: "Model"
+    return createForegroundInfo(progress = 0, modelName = modelName)
+  }
+
+  private fun createDownloadModel(
+    name: String,
+    fileName: String,
+    url: String,
+    dirVersion: String,
+    isPrimary: Boolean,
+    isZip: Boolean,
+    totalBytes: Long,
+  ): Model {
+    return Model(
+      name = name,
+      url = url,
+      downloadFileName = fileName,
+      sizeInBytes = if (isPrimary) totalBytes else 0L,
+      version = dirVersion,
+      isZip = isZip,
+    )
+  }
+
+  private fun buildDownloadSpecs(
+    fileUrl: String,
+    fileName: String,
+    extraDataFileUrls: List<String>,
+    extraDataFileNames: List<String>,
+  ): List<DownloadFileSpec> {
+    val specs = mutableListOf<DownloadFileSpec>()
+    specs.add(DownloadFileSpec(url = fileUrl, fileName = fileName, isPrimary = true))
+
+    val maxExtraFiles = min(extraDataFileUrls.size, extraDataFileNames.size)
+    for (index in 0 until maxExtraFiles) {
+      specs.add(
+        DownloadFileSpec(
+          url = extraDataFileUrls[index],
+          fileName = extraDataFileNames[index],
+          isPrimary = false,
+        )
+      )
+    }
+    return specs
+  }
+
+  private suspend fun unzipModelFile(
+    mainModelFile: File,
+    outputBaseDir: File,
+    unzippedDir: String,
+  ) {
+    setProgress(Data.Builder().putBoolean(KEY_MODEL_START_UNZIPPING, true).build())
+
+    val destinationDir =
+      File(outputBaseDir, unzippedDir).apply {
+        if (!exists()) {
+          mkdirs()
+        }
+      }
+
+    val buffer = ByteArray(4096)
+    val zipIn = ZipInputStream(BufferedInputStream(FileInputStream(mainModelFile)))
+    zipIn.use { zip ->
+      while (true) {
+        val zipEntry = zip.nextEntry ?: break
+        val outputPath = File(destinationDir, zipEntry.name)
+        try {
+          if (zipEntry.isDirectory) {
+            outputPath.mkdirs()
+          } else {
+            outputPath.parentFile?.mkdirs()
+            FileOutputStream(outputPath).use { output ->
+              var length: Int
+              while (zip.read(buffer).also { length = it } > 0) {
+                output.write(buffer, 0, length)
+              }
+            }
+          }
+        } finally {
+          zip.closeEntry()
+        }
+      }
+    }
+
+    mainModelFile.delete()
+  }
+
+  private fun failureResult(message: String): Result {
+    Log.e(TAG, "worker failure: $message")
+    return Result.failure(workDataOf(KEY_MODEL_DOWNLOAD_ERROR_MESSAGE to message))
   }
 
   /**
@@ -331,12 +342,13 @@ class DownloadWorker(context: Context, params: WorkerParameters) :
    * an active download is in progress.
    */
   private fun createForegroundInfo(progress: Int, modelName: String? = null): ForegroundInfo {
-    // Create a notification for the foreground service
-    var title = "Downloading model"
-    if (modelName != null) {
-      title = "Downloading \"$modelName\""
-    }
-    val content = "Downloading in progress: $progress%"
+    val title =
+      if (modelName != null) {
+        applicationContext.getString(R.string.downloading_model_name, modelName)
+      } else {
+        applicationContext.getString(R.string.downloading_model)
+      }
+    val content = applicationContext.getString(R.string.downloading_in_progress, progress)
 
     val intent =
       Intent(applicationContext, Class.forName("com.google.ai.edge.gallery.MainActivity")).apply {
@@ -355,8 +367,8 @@ class DownloadWorker(context: Context, params: WorkerParameters) :
         .setContentTitle(title)
         .setContentText(content)
         .setSmallIcon(android.R.drawable.ic_dialog_info)
-        .setOngoing(true) // Makes the notification non-dismissable
-        .setProgress(100, progress, false) // Show progress
+        .setOngoing(true)
+        .setProgress(100, progress, false)
         .setContentIntent(pendingIntent)
         .build()
 

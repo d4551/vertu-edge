@@ -36,6 +36,9 @@ const val KEY_MODEL_IS_ZIP = "KEY_MODEL_IS_ZIP"
 const val KEY_MODEL_UNZIPPED_DIR = "KEY_MODEL_UNZIPPED_DIR"
 const val KEY_MODEL_START_UNZIPPING = "KEY_MODEL_START_UNZIPPING"
 
+// Supported import model types. Currently only LLM is supported for import.
+const val IMPORT_MODEL_TYPE_LLM = "LLM"
+
 // Default values for LLM models.
 const val DEFAULT_MAX_TOKEN = 1024
 const val DEFAULT_TOPK = 64
@@ -59,4 +62,4 @@ const val SAMPLE_RATE = 16000
 val MODEL_INFO_ICON_SIZE = 18.dp
 
 // The extension of the tmp download files.
-const val TMP_FILE_EXT = "gallerytmp"
+const val TMP_FILE_EXT = "part"
