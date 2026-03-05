@@ -128,7 +128,7 @@ The Android surface includes:
 
 ```mermaid
 flowchart LR
-  subgraph Clients
+  subgraph Clients["Clients"]
     A[Web Console (SSR+HTMX)]
     B[Android App]
     C[iOS App]
@@ -142,12 +142,12 @@ flowchart LR
     H[Job Queue + Log Stream]
   end
 
-  subgraph Shared
-    I[contracts/\nflow-contracts / ucp-contracts]
+  subgraph Shared["Shared"]
+    I["contracts/flow-contracts<br/>ucp-contracts"]
     J[tooling/vertu-flow-kit]
   end
 
-  subgraph Platform
+  subgraph Platform["Platform"]
     K[vertu-core KMP]
     L[vertu-android-rpa]
   end
@@ -173,23 +173,23 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-  subgraph Definition
-    A[Flow YAML / manifest]
-    B[Flow parser + schema validator]
-    C[Flow contract objects]
+  subgraph Definition["Definition"]
+    A["Flow YAML / manifest"]
+    B["Flow parser + schema validator"]
+    C["Flow contract objects"]
   end
 
-  subgraph Runtime
-    D[flow-engine enqueue]
-    E[Adapter dispatch by command kind]
-    F[Platform executor]
-    G[Run state + artifacts]
+  subgraph Runtime["Runtime"]
+    D["flow-engine enqueue"]
+    E["Adapter dispatch by command kind"]
+    F["Platform executor"]
+    G["Run state + artifacts"]
   end
 
-  subgraph Outputs
-    H[Structured logs]
-    I[Status transitions]
-    J[Error envelope]
+  subgraph Outputs["Outputs"]
+    H["Structured logs"]
+    I["Status transitions"]
+    J["Error envelope"]
   end
 
   A --> B --> C --> D --> E --> F --> G
@@ -202,15 +202,15 @@ flowchart TB
 
 ```mermaid
 stateDiagram-v2
-    [*] --> queued
-    queued --> running : start
-    running --> success : completed without error
-    running --> failed : terminal error
-    running --> cancelled : user cancel or replace
-    failed --> retried : optional retry policy
-    success --> [*]
-    failed --> [*]
-    cancelled --> [*]
+    [*] --> QUEUED
+    QUEUED --> RUNNING : Start
+    RUNNING --> SUCCESS : Completed without error
+    RUNNING --> FAILED : Terminal error
+    RUNNING --> CANCELLED : User cancel or replace
+    FAILED --> RETRIED : Optional retry policy
+    SUCCESS --> [*]
+    FAILED --> [*]
+    CANCELLED --> [*]
 ```
 
 ## Configuration
@@ -310,28 +310,28 @@ Vertu Edge 是一个面向 **AI Flow 调度、模型生命周期管理、跨端�
 
 ```mermaid
 flowchart LR
-  subgraph Clients
-    A[Web 控制台（SSR+HTMX）]
-    B[Android]
-    C[iOS]
-    D[自动化工具]
+  subgraph Clients["客户端"]
+    A["Web 控制台（SSR+HTMX）"]
+    B["Android"]
+    C["iOS"]
+    D["自动化工具"]
   end
 
   subgraph Control["控制平面"]
-    E[HTTP/API（Elysia）]
-    F[Flow Engine]
+    E["HTTP/API（Elysia）"]
+    F["Flow Engine"]
     G[(SQLite + Prisma)]
-    H[Job Queue / Log Stream]
+    H["Job Queue / Log Stream"]
   end
 
   subgraph Shared["共享层"]
-    I[contracts]
-    J[tooling/vertu-flow-kit]
+    I["contracts / flow-contracts<br/>ucp-contracts"]
+    J["tooling/vertu-flow-kit"]
   end
 
   subgraph Platform["平台层"]
-    K[vertu-core KMP]
-    L[vertu-android-rpa]
+    K["vertu-core KMP"]
+    L["vertu-android-rpa"]
   end
 
   A --> E
@@ -356,22 +356,22 @@ flowchart LR
 ```mermaid
 flowchart TB
   subgraph Definition["定义层"]
-    A[Flow YAML / manifest]
-    B[Parser + Schema 校验]
-    C[结构化 Flow 合约对象]
+    A["Flow YAML / manifest"]
+    B["Parser + Schema 校验"]
+    C["结构化 Flow 合约对象"]
   end
 
   subgraph Runtime["运行时"]
-    D[入队/启动执行]
-    E[按命令分发]
-    F[平台执行器]
-    G[执行状态与产物]
+    D["入队/启动执行"]
+    E["按命令分发"]
+    F["平台执行器"]
+    G["执行状态与产物"]
   end
 
   subgraph Result["结果层"]
-    H[结构化日志]
-    I[状态变更]
-    J[错误 envelope]
+    H["结构化日志"]
+    I["状态变更"]
+    J["错误 envelope"]
   end
 
   A --> B --> C --> D --> E --> F --> G
@@ -384,15 +384,15 @@ flowchart TB
 
 ```mermaid
 stateDiagram-v2
-    [*] --> queued
-    queued --> running : 开始
-    running --> success : 无错误完成
-    running --> failed : 执行异常
-    running --> cancelled : 手动取消/替换
-    failed --> retried : 可选重试
-    success --> [*]
-    failed --> [*]
-    cancelled --> [*]
+    [*] --> QUEUED
+    QUEUED --> RUNNING : 开始
+    RUNNING --> SUCCESS : 无错误完成
+    RUNNING --> FAILED : 执行异常
+    RUNNING --> CANCELLED : 手动取消/替换
+    FAILED --> RETRIED : 可选重试
+    SUCCESS --> [*]
+    FAILED --> [*]
+    CANCELLED --> [*]
 ```
 
 ## 运行与配置入口
