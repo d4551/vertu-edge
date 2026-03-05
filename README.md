@@ -129,27 +129,27 @@ The Android surface includes:
 ```mermaid
 flowchart LR
   subgraph Clients
-    A[Web Console (SSR+HTMX)]
-    B[Android App]
-    C[iOS App]
-    D[Automation/External Tooling]
+    A["Web Console SSR+HTMX"]
+    B["Android App"]
+    C["iOS App"]
+    D["Automation/External Tooling"]
   end
 
   subgraph Edge
-    E["HTTP/API Layer - Elysia"]
-    F[Flow Engine]
-    G[(SQLite + Prisma)]
-    H[Job Queue + Log Stream]
+    E["HTTP API Layer - Elysia"]
+    F["Flow Engine"]
+    G["SQLite + Prisma"]
+    H["Job Queue + Log Stream"]
   end
 
   subgraph Shared
     I["contracts/flow-contracts / ucp-contracts"]
-    J[tooling/vertu-flow-kit]
+    J["tooling/vertu-flow-kit"]
   end
 
   subgraph Platform
-    K[vertu-core KMP]
-    L[vertu-android-rpa]
+    K["vertu-core KMP"]
+    L["vertu-android-rpa"]
   end
 
   A --> E
@@ -318,9 +318,9 @@ flowchart LR
   end
 
   subgraph Control
-    E["HTTP/API - Elysia"]
+    E["HTTP API - Elysia"]
     F["Flow Engine"]
-    G[(SQLite + Prisma)]
+    G["SQLite + Prisma"]
     H["Job Queue / Log Stream"]
   end
 
