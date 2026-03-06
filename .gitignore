@@ -1,5 +1,30 @@
 .DS_Store
 **/node_modules/
 **/.build/
+**/build/
+**/.gradle/
+.artifacts/
 *.compiled.json
 .vendor-assets/
+*.sqlite.bad*
+
+# IDE / editor
+.idea/
+.vscode/
+*.xcuserdata
+*.xcuserstate
+
+# Xcode
+**/DerivedData/
+**/xcuserdata/
+
+# Bun / TypeScript
+**/dist/
+**/out/
+*.tsbuildinfo
+
+# Local config (secrets, SDK paths)
+**/vertu.local.properties
+**/.env
+**/.env.local
+**/.env.*.local
