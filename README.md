@@ -1,27 +1,56 @@
-# Vertu Edge
+<p align="center">
+  <img src="https://img.shields.io/badge/Vertu%20Edge-Contract--First%20AI%20Platform-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Vertu Edge" />
+</p>
 
-[English](#english) · [中文](#中文)
+<p align="center">
+  <a href="#english">English</a> ·
+  <a href="#%E4%B8%AD%E6%96%87">中文</a>
+</p>
+
+---
+
+<p align="center">
+  <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License" />
+  <img src="https://img.shields.io/badge/Platform-Android%20%7C%20iOS-3DDC84?logo=android&logoColor=white" alt="Platform" />
+  <img src="https://img.shields.io/badge/Runtime-Bun%201.3-000000?logo=bun&logoColor=white" alt="Bun" />
+  <img src="https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Kotlin-Multiplatform-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin" />
+  <img src="https://img.shields.io/badge/Swift-5.0-FA7343?logo=swift&logoColor=white" alt="Swift" />
+</p>
+
+---
+
+<p align="center">
+  <strong>Vertu Edge</strong> is a contract-first platform for AI workflow orchestration, 
+  local/cloud model lifecycle management, and cross-platform Android/iOS application generation.
+</p>
+
+---
 
 ## English
 
-Vertu Edge is a contract-first platform for:
+### Features
 
-- AI workflow orchestration
-- local/cloud model lifecycle management
-- Android and iOS application generation
-- cross-platform automation and device-readiness verification
+| Area | Description |
+|------|-------------|
+| **AI Workflows** | Orchestrate flows with typed contracts, HTMX-driven UI, and server-side rendering |
+| **Model Lifecycle** | Local and cloud model management via Hugging Face, Ollama, and Ramalama |
+| **App Generation** | Build Android and iOS apps from a single typed CLI with device-readiness verification |
+| **Automation** | Cross-platform RPA, flow commands, and device-AI protocol with schema-validated reports |
 
-The repository is organized around a small set of canonical owners:
+### Repository structure
 
-- `control-plane/`: Bun + Elysia control-plane, SSR HTML, HTMX, DaisyUI, job orchestration
-- `contracts/`: shared contracts for flow execution, runtime envelopes, and device-AI protocol
-- `tooling/vertu-flow-kit/`: typed CLI for verify/build/download/audit flows
-- `Android/`: Android runtime, model management, protocol runner, and UI
-- `iOS/VertuEdge/`: iOS runtime, host app, protocol runner, and XCTest-separated automation
-- `vertu-core/`: shared Kotlin Multiplatform models and parsing utilities
-- `docs/`: architecture trace, env matrix, flow reference, capability audit, and device-AI gap tracking
+| Module | Purpose |
+|--------|---------|
+| `control-plane/` | Bun + Elysia, SSR HTML, HTMX, DaisyUI, job orchestration |
+| `contracts/` | Shared contracts for flow execution, runtime envelopes, device-AI protocol |
+| `tooling/vertu-flow-kit/` | Typed CLI for verify/build/download/audit flows |
+| `Android/` | Android runtime, model management, protocol runner, and UI |
+| `iOS/VertuEdge/` | iOS runtime, host app, protocol runner, XCTest-separated automation |
+| `vertu-core/` | Shared Kotlin Multiplatform models and parsing utilities |
+| `docs/` | Architecture trace, env matrix, flow reference, capability audit, device-AI gap tracking |
 
-## Canonical architecture
+### Architecture overview
 
 ```mermaid
 flowchart LR
@@ -37,7 +66,7 @@ flowchart LR
     DOWNLOAD["device-ai download-model"]
   end
 
-  subgraph ControlPlane["Control plane"]
+  subgraph ControlPlane["Control Plane"]
     APP["app.ts bootstrap"]
     PLUGINS["Prefixed Elysia plugins"]
     HELPERS["handlers, parsers, renderers"]
@@ -110,14 +139,22 @@ flowchart TB
   PROVIDER --> AIP
 ```
 
-## Developer workflow
+### Developer workflow
 
 ```mermaid
 flowchart LR
   BOOT["Bootstrap host"] --> VERIFY["Run verify all"] --> BUILD["Generate Android/iOS/Desktop artifacts"] --> DEVICE["Run native device protocol"]
 ```
 
-## Canonical commands
+### Quick start
+
+```bash
+./scripts/dev_doctor.sh
+./scripts/dev_bootstrap.sh
+bun run --cwd tooling/vertu-flow-kit src/cli.ts verify all
+```
+
+### Canonical commands
 
 ### Bootstrap
 
@@ -158,19 +195,23 @@ VERTU_VERIFY_DEVICE_AI_PROTOCOL=1 \
   bun run --cwd tooling/vertu-flow-kit src/cli.ts verify all
 ```
 
-## Source-of-truth docs
+### Documentation
 
-- Docs index: [docs/README.md](docs/README.md)
-- Architecture: [docs/SYSTEM_ARCHITECTURE_TRACE.md](docs/SYSTEM_ARCHITECTURE_TRACE.md)
-- Flow and route reference: [docs/FLOW_REFERENCE.md](docs/FLOW_REFERENCE.md)
-- Environment variables: [docs/ENV.md](docs/ENV.md)
-- Capability inventory: [docs/CAPABILITY_AUDIT.md](docs/CAPABILITY_AUDIT.md)
-- Device-AI runtime gaps: [docs/DEVICE_AI_GAP_AUDIT.md](docs/DEVICE_AI_GAP_AUDIT.md)
-- Developer runbook: [DEVELOPMENT.md](DEVELOPMENT.md)
-- Control-plane service doc: [control-plane/README.md](control-plane/README.md)
-- iOS runtime doc: [iOS/VertuEdge/README.md](iOS/VertuEdge/README.md)
+| Doc | Description |
+|-----|-------------|
+| [docs/README.md](docs/README.md) | Documentation index |
+| [docs/SYSTEM_ARCHITECTURE_TRACE.md](docs/SYSTEM_ARCHITECTURE_TRACE.md) | Architecture trace |
+| [docs/FLOW_REFERENCE.md](docs/FLOW_REFERENCE.md) | Flow and route reference |
+| [docs/ENV.md](docs/ENV.md) | Environment variables |
+| [docs/CAPABILITY_AUDIT.md](docs/CAPABILITY_AUDIT.md) | Capability inventory |
+| [docs/DEVICE_AI_GAP_AUDIT.md](docs/DEVICE_AI_GAP_AUDIT.md) | Device-AI runtime gaps |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | Developer runbook |
+| [control-plane/README.md](control-plane/README.md) | Control-plane service |
+| [iOS/VertuEdge/README.md](iOS/VertuEdge/README.md) | iOS runtime |
 
-## Verification expectations
+### Verification
+
+Before handing off work:
 
 Before handing off work, run:
 
@@ -182,30 +223,36 @@ bun run audit:code-practices
 bun run audit:capability-gaps
 ```
 
-If build or runtime paths changed, also run:
+If build or runtime paths changed:
 
 ```bash
 bun run --cwd tooling/vertu-flow-kit src/cli.ts verify all
 ```
 
+---
+
 ## 中文
 
-Vertu Edge 是一个以合约为中心的平台，覆盖：
+### 功能概览
 
-- AI 工作流编排
-- 本地/云模型生命周期管理
-- Android 与 iOS 应用构建
-- 跨端自动化与设备就绪性验证
+| 领域 | 说明 |
+|------|------|
+| **AI 工作流** | 类型化合约编排、HTMX 驱动 UI、服务端渲染 |
+| **模型生命周期** | 通过 Hugging Face、Ollama、Ramalama 管理本地与云端模型 |
+| **应用构建** | 单一类型化 CLI 构建 Android 与 iOS 应用，含设备就绪验证 |
+| **自动化** | 跨平台 RPA、流程命令、Device AI 协议与 schema 校验报告 |
 
-仓库的规范入口如下：
+### 仓库结构
 
-- `control-plane/`：Bun + Elysia 控制平面、SSR、HTMX、DaisyUI、任务编排
-- `contracts/`：Flow、错误 envelope、Device AI 协议等共享合约
-- `tooling/vertu-flow-kit/`：统一的 verify/build/download/audit CLI
-- `Android/`：Android 运行时、模型管理与设备协议执行
-- `iOS/VertuEdge/`：iOS 运行时、Host App 与 XCTest 分离的自动化实现
-- `vertu-core/`：共享 KMP 模型与解析能力
-- `docs/`：架构、环境变量、能力审计、流程参考、设备缺口文档
+| 模块 | 用途 |
+|------|------|
+| `control-plane/` | Bun + Elysia、SSR、HTMX、DaisyUI、任务编排 |
+| `contracts/` | Flow、错误 envelope、Device AI 协议等共享合约 |
+| `tooling/vertu-flow-kit/` | 统一的 verify/build/download/audit CLI |
+| `Android/` | Android 运行时、模型管理与设备协议执行 |
+| `iOS/VertuEdge/` | iOS 运行时、Host App 与 XCTest 分离的自动化 |
+| `vertu-core/` | 共享 KMP 模型与解析能力 |
+| `docs/` | 架构、环境变量、能力审计、流程参考、设备缺口文档 |
 
 ### 规范架构
 
