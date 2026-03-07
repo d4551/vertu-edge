@@ -2,10 +2,15 @@
  * Shared HTML renderers for control-plane envelope and status UI.
  */
 
-import { t as tStr } from "../i18n";
+import { t as tStr, tInterp } from "../i18n";
 import { htmxSpinner, HTMX_SWAP_INNER } from "../htmx-helpers";
-import type { ControlPlaneState } from "../config";
-import type { ApiEnvelope, ModelPullEnvelope, AppBuildEnvelope } from "../../../contracts/flow-contracts";
+import { DEFAULT_CHAT_MODEL, DEFAULT_THEME, type ControlPlaneState } from "../config";
+import type {
+  ApiEnvelope,
+  ModelPullEnvelope,
+  AppBuildEnvelope,
+  PreferenceRunEnvelope,
+} from "../../../contracts/flow-contracts";
 
 /** Escape user-controlled content before injecting into HTML. */
 export function esc(value: string): string {
@@ -172,4 +177,26 @@ export function renderPollingEnvelope(
       ${artifactLink}
     </div>`,
   );
+}
+
+/** Render persisted preference state with deterministic success/error messaging. */
+export function renderPreferenceStateEnvelope(route: string, envelope: PreferenceRunEnvelope): string {
+  const payload = envelope.data;
+  const lines = [
+    tInterp("api.prefs_saved_detail", {
+      theme: payload?.effectiveTheme ?? DEFAULT_THEME,
+      model: payload?.effectiveModel ?? DEFAULT_CHAT_MODEL,
+    }),
+    ...(envelope.mismatches ?? []),
+  ];
+
+  const heading = envelope.state === "success" ? tStr("api.prefs_saved") : tStr("api.request_failed");
+  const message = envelope.state === "success"
+    ? tInterp("api.prefs_saved_detail", {
+      theme: payload?.effectiveTheme ?? DEFAULT_THEME,
+      model: payload?.effectiveModel ?? DEFAULT_CHAT_MODEL,
+    })
+    : tStr("api.prefs_saved_with_warnings");
+
+  return renderStatusEnvelope(route, envelope, heading, message, lines);
 }

@@ -54,7 +54,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -133,7 +132,7 @@ fun ModelPickerChip(
           modifier =
             Modifier.padding(start = 4.dp)
               .widthIn(0.dp, screenWidthDp - 250.dp)
-              .clearAndSetSemantics {},
+              .semantics { contentDescription = modelName },
           maxLines = 1,
           overflow = TextOverflow.MiddleEllipsis,
         )

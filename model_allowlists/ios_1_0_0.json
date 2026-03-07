@@ -67,6 +67,9 @@
       "commitHash": "5b34029a6b23a90aea2e377f1f9b273d1001638c",
       "llmSupportImage": true,
       "llmSupportAudio": true,
+      "deviceAiSupportMobileActions": true,
+      "deviceAiSupportRpaControls": true,
+      "deviceAiSupportFlowCommands": true,
       "defaultConfig": {
         "topK": 40,
         "topP": 0.95,

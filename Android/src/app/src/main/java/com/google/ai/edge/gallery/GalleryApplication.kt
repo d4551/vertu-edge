@@ -18,11 +18,17 @@ package com.google.ai.edge.gallery
 
 import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
+import com.google.ai.edge.gallery.common.applyAppLocale
+import com.google.ai.edge.gallery.common.normalizeAppLocaleTag
 import com.google.ai.edge.gallery.data.DataStoreRepository
 import com.google.ai.edge.gallery.ui.theme.ThemeSettings
 import com.google.firebase.FirebaseApp
 import androidx.work.Configuration
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 
@@ -31,12 +37,19 @@ class GalleryApplication : Application(), Configuration.Provider {
 
   @Inject lateinit var dataStoreRepository: DataStoreRepository
   @Inject lateinit var hiltWorkerFactory: HiltWorkerFactory
+  private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
   override fun onCreate() {
     super.onCreate()
 
-    // Load saved theme.
-    ThemeSettings.themeOverride.value = runBlocking { dataStoreRepository.readTheme() }
+    runBlocking {
+      applyAppLocale(normalizeAppLocaleTag(dataStoreRepository.readAppLocale()))
+    }
+
+    // Load saved theme asynchronously to avoid blocking app startup.
+    appScope.launch {
+      ThemeSettings.themeOverride.value = dataStoreRepository.readTheme()
+    }
 
     FirebaseApp.initializeApp(this)
   }

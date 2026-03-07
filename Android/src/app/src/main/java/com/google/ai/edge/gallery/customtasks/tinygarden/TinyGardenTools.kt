@@ -15,7 +15,7 @@
  */
 package com.google.ai.edge.gallery.customtasks.tinygarden
 
-import android.util.Log
+import com.google.ai.edge.gallery.common.StructuredLog
 import com.google.ai.edge.litertlm.Tool
 import com.google.ai.edge.litertlm.ToolParam
 
@@ -52,7 +52,7 @@ class TinyGardenTools(val onFunctionCalled: (command: TinyGardenCommand) -> Unit
   fun waterPlots(
     @ToolParam(description = "The IDs of the plots to water.") plots: List<Int>
   ): Map<String, Any> {
-    Log.d(TAG, "waterPlots. Plots=$plots")
+    StructuredLog.d(TAG, "tiny_garden_water_plots_called", "plots" to plots.joinToString(","))
 
     onFunctionCalled(
       TinyGardenCommand(item = TinyGardenItem.WATERING_CAN.ordinal + 1, plots = plots)
@@ -68,7 +68,12 @@ class TinyGardenTools(val onFunctionCalled: (command: TinyGardenCommand) -> Unit
     @ToolParam(description = "The name of the seed to plant.") seed: String,
     @ToolParam(description = "The IDs of the plots to plant a seed in.") plots: List<Int>,
   ): Map<String, Any> {
-    Log.d(TAG, "plantSeed. seed: $seed, plots; $plots")
+    StructuredLog.d(
+      TAG,
+      "tiny_garden_plant_seed_called",
+      "seed" to seed,
+      "plots" to plots.joinToString(","),
+    )
 
     val itemId =
       when (seed.lowercase()) {
@@ -93,7 +98,7 @@ class TinyGardenTools(val onFunctionCalled: (command: TinyGardenCommand) -> Unit
   fun harvestPlots(
     @ToolParam(description = "The IDs of the plots to harvest.") plots: List<Int>
   ): Map<String, Any> {
-    Log.d(TAG, "harvestPlots. Plots=$plots")
+    StructuredLog.d(TAG, "tiny_garden_harvest_plots_called", "plots" to plots.joinToString(","))
 
     onFunctionCalled(TinyGardenCommand(item = TinyGardenItem.SCYTHE.ordinal + 1, plots = plots))
 

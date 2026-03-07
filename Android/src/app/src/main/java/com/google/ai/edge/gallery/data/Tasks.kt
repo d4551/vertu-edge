@@ -65,6 +65,9 @@ data class Task(
    */
   val description: String,
 
+  /** Optional string resource for localized task description text. */
+  @StringRes val descriptionResId: Int? = null,
+
   /**
    * (optional)
    *

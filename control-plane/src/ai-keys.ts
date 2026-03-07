@@ -1,13 +1,19 @@
 /**
  * SQLite-backed API key storage for AI providers.
- * Uses the shared `bun:sqlite` database instance from `db.ts`.
+ * Uses the Drizzle ORM instance from `db/index.ts`.
  *
- * Security: full API keys are stored in SQLite for use by provider clients.
- * For display purposes, use `maskApiKey` which returns only the last 4 chars
- * of the key prefixed with asterisks (e.g. "****abcd").
+ * Security: provider credentials are encrypted at rest using AES-256-GCM and
+ * fail closed when `VERTU_ENCRYPTION_KEY` is missing or invalid. For display
+ * purposes, use `maskApiKey` which returns only the last 4 chars of the key
+ * prefixed with asterisks (e.g. "****abcd").
  */
+import { eq } from "drizzle-orm";
 import { db } from "./db";
+import { apiKeys } from "./db/schema";
 import type { ProviderId } from "./ai-providers";
+import type { Result } from "../../shared/failure";
+import { logger } from "./logger";
+import { decryptSecret, encryptSecret, type EncryptionFailure } from "./services/encryption";
 
 /**
  * Mask an API key for safe display. Returns "****<last4>" if the key is long
@@ -18,58 +24,6 @@ export function maskApiKey(apiKey: string): string {
   if (trimmed.length === 0) return "";
   if (trimmed.length <= 4) return "****";
   return `****${trimmed.slice(-4)}`;
-}
-
-/** Row shape for the `api_keys` table. */
-interface ApiKeyRow {
-  provider: string;
-  api_key: string;
-  base_url: string | null;
-  updated_at: string;
-}
-
-function parseApiKeyRow(row: { api_key: string | null } | null): { api_key: string } | null {
-  if (!row || typeof row.api_key !== "string") {
-    return null;
-  }
-  return { api_key: row.api_key };
-}
-
-function parseApiKeyBaseUrlRow(row: { base_url: string | null } | null): { base_url: string | null } | null {
-  if (!row) {
-    return null;
-  }
-  const rawBaseUrl = row.base_url;
-  if (rawBaseUrl === null) {
-    return { base_url: null };
-  }
-  if (typeof rawBaseUrl !== "string" || rawBaseUrl.trim().length === 0) {
-    return null;
-  }
-  return { base_url: rawBaseUrl };
-}
-
-function parseApiKeyFullRow(row: Partial<ApiKeyRow>): ApiKeyRow | null {
-  const provider = row.provider;
-  const api_key = row.api_key;
-  const base_url = row.base_url;
-  const updated_at = row.updated_at;
-  if (typeof provider !== "string" || typeof api_key !== "string" || typeof updated_at !== "string") {
-    return null;
-  }
-  if (base_url !== null && typeof base_url !== "string") {
-    return null;
-  }
-  return {
-    provider,
-    api_key,
-    base_url: base_url ?? null,
-    updated_at,
-  };
-}
-
-function parseApiKeyRows(rows: readonly Partial<ApiKeyRow>[]): ApiKeyRow[] {
-  return rows.map((row) => parseApiKeyFullRow(row)).filter((row): row is ApiKeyRow => row !== null);
 }
 
 /** Provider status input used to evaluate if credentials are complete. */
@@ -84,6 +38,102 @@ export interface ProviderStatus {
   configured: boolean;
   baseUrl: string | null;
   updatedAt: string | null;
+  credentialState: ProviderCredentialState;
+}
+
+/** Deterministic credential-storage states surfaced to the UI. */
+export type ProviderCredentialState =
+  | "configured"
+  | "not-configured"
+  | "secure-storage-unavailable"
+  | "stored-credential-invalid";
+
+/** Typed failure emitted when provider credential persistence is unavailable. */
+export interface ProviderCredentialFailure {
+  readonly code: Exclude<ProviderCredentialState, "configured" | "not-configured">;
+  readonly message: string;
+}
+
+type StoredCredentialRow = {
+  readonly provider: ProviderId;
+  readonly apiKey: string;
+  readonly baseUrl: string | null;
+  readonly updatedAt: string;
+};
+
+type StoredCredentialResolution = {
+  readonly apiKey: string | null;
+  readonly credentialState: ProviderCredentialState;
+};
+
+function mapEncryptionFailure(error: EncryptionFailure): ProviderCredentialFailure {
+  if (error.code === "invalid-payload") {
+    return {
+      code: "stored-credential-invalid",
+      message: "Stored provider credential is unreadable. Re-enter the provider key.",
+    };
+  }
+  return {
+    code: "secure-storage-unavailable",
+    message: "Set VERTU_ENCRYPTION_KEY before storing provider credentials.",
+  };
+}
+
+function getStoredCredentialRow(provider: ProviderId): StoredCredentialRow | null {
+  const row = db.select()
+    .from(apiKeys)
+    .where(eq(apiKeys.provider, provider))
+    .get();
+  if (!row) return null;
+  if (
+    typeof row.apiKey !== "string"
+    || typeof row.updatedAt !== "string"
+  ) {
+    return null;
+  }
+  return {
+    provider,
+    apiKey: row.apiKey,
+    baseUrl: typeof row.baseUrl === "string" ? row.baseUrl : null,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function resolveStoredApiKey(storedValue: string | null | undefined): StoredCredentialResolution {
+  const normalizedStoredValue = typeof storedValue === "string" ? storedValue.trim() : "";
+  if (normalizedStoredValue.length === 0) {
+    return {
+      apiKey: null,
+      credentialState: "not-configured",
+    };
+  }
+
+  const decrypted = decryptSecret(normalizedStoredValue);
+  if (!decrypted.ok) {
+    if (decrypted.error.code === "invalid-payload") {
+      return {
+        apiKey: null,
+        credentialState: "stored-credential-invalid",
+      };
+    }
+    return {
+      apiKey: null,
+      credentialState: "secure-storage-unavailable",
+    };
+  }
+
+  const apiKey = decrypted.data.trim();
+  if (apiKey.length === 0) {
+    return {
+      apiKey: null,
+      credentialState: "not-configured",
+    };
+  }
+
+  return {
+    apiKey,
+    credentialState: "configured",
+  };
 }
 
 /**
@@ -93,43 +143,62 @@ export function saveApiKey(
   provider: ProviderId,
   apiKey: string,
   baseUrl?: string,
-): void {
-  db.run(
-    `INSERT INTO api_keys (provider, api_key, base_url, updated_at)
-     VALUES (?, ?, ?, datetime('now'))
-     ON CONFLICT(provider) DO UPDATE SET
-       api_key = excluded.api_key,
-       base_url = excluded.base_url,
-       updated_at = datetime('now')`,
-    [provider, apiKey, baseUrl ?? null],
-  );
+): Result<void, ProviderCredentialFailure> {
+  const now = new Date().toISOString();
+  const normalizedApiKey = apiKey.trim();
+  let encryptedKey = "";
+  if (normalizedApiKey.length > 0) {
+    const encryptionResult = encryptSecret(normalizedApiKey);
+    if (!encryptionResult.ok) {
+      return { ok: false, error: mapEncryptionFailure(encryptionResult.error) };
+    }
+    encryptedKey = encryptionResult.data;
+  }
+
+  db.insert(apiKeys)
+    .values({
+      provider,
+      apiKey: encryptedKey,
+      baseUrl: baseUrl ?? null,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: apiKeys.provider,
+      set: { apiKey: encryptedKey, baseUrl: baseUrl ?? null, updatedAt: now },
+    })
+    .run();
+  return { ok: true, data: undefined };
 }
 
 /**
  * Retrieve the stored API key for a provider.
  */
 export function getApiKey(provider: ProviderId): string | null {
-  const row = parseApiKeyRow(
-    db.query<{ api_key: string | null }, [ProviderId]>("SELECT api_key FROM api_keys WHERE provider = ?").get(provider),
-  );
-  return row?.api_key ?? null;
+  const row = getStoredCredentialRow(provider);
+  if (!row) return null;
+  const resolved = resolveStoredApiKey(row.apiKey);
+  if (resolved.credentialState === "stored-credential-invalid") {
+    logger.warn("Stored provider credential is unreadable", { provider });
+  }
+  return resolved.apiKey;
 }
 
 /**
  * Retrieve the stored base URL for a provider (primarily for Ollama).
  */
 export function getBaseUrl(provider: ProviderId): string | null {
-  const row = parseApiKeyBaseUrlRow(
-    db.query<{ base_url: string | null }, [ProviderId]>("SELECT base_url FROM api_keys WHERE provider = ?").get(provider),
-  );
-  return row?.base_url ?? null;
+  const row = getStoredCredentialRow(provider);
+  if (!row) return null;
+  if (row.baseUrl === null) return null;
+  if (typeof row.baseUrl !== "string" || row.baseUrl.trim().length === 0) return null;
+  return row.baseUrl;
 }
 
 /**
  * Delete a stored API key for a provider.
  */
 export function deleteApiKey(provider: ProviderId): void {
-  db.run("DELETE FROM api_keys WHERE provider = ?", [provider]);
+  db.delete(apiKeys).where(eq(apiKeys.provider, provider)).run();
 }
 
 /**
@@ -138,22 +207,30 @@ export function deleteApiKey(provider: ProviderId): void {
 export function getAllProviderStatuses(
   providers: readonly ProviderStatusInput[],
 ): ProviderStatus[] {
-  const rows = parseApiKeyRows(
-    db.query<ApiKeyRow, []>("SELECT provider, api_key, base_url, updated_at FROM api_keys").all(),
-  );
+  const rows = db.select().from(apiKeys).all().filter((row): row is StoredCredentialRow =>
+    typeof row.provider === "string"
+    && typeof row.apiKey === "string"
+    && typeof row.updatedAt === "string");
 
-  const configured = new Map(rows.map((r) => [r.provider, r]));
+  const configured = new Map(
+    rows
+      .map((r) => [r.provider, r]),
+  );
 
   return providers.map((provider) => {
     const row = configured.get(provider.provider);
-    const hasStoredRow = Boolean(row);
-    const hasKey = (row?.api_key ?? "").trim().length > 0;
-    const isConfigured = provider.requiresKey ? hasStoredRow && hasKey : true;
+    const resolvedCredential = provider.requiresKey
+      ? resolveStoredApiKey(row?.apiKey)
+      : { apiKey: null, credentialState: "configured" as const };
+    const isConfigured = provider.requiresKey
+      ? resolvedCredential.credentialState === "configured"
+      : true;
     return {
       provider: provider.provider,
       configured: isConfigured,
-      baseUrl: row?.base_url ?? null,
-      updatedAt: row?.updated_at ?? null,
+      baseUrl: row?.baseUrl ?? null,
+      updatedAt: row?.updatedAt ?? null,
+      credentialState: provider.requiresKey ? resolvedCredential.credentialState : "configured",
     };
   });
 }

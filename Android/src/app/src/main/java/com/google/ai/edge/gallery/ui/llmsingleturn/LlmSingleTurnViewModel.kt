@@ -24,6 +24,7 @@ import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.Task
 import com.google.ai.edge.gallery.ui.llmchat.LlmChatModelHelper
 import com.google.ai.edge.gallery.ui.llmchat.LlmModelInstance
+import com.google.ai.edge.gallery.common.MODEL_INIT_TIMEOUT_MS
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
@@ -61,8 +62,15 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
       setInProgress(true)
       setPreparing(true)
 
-      // Wait for instance to be initialized.
+      // Wait for instance to be initialized (bounded to 60 s).
+      val initDeadline = System.currentTimeMillis() + MODEL_INIT_TIMEOUT_MS
       while (model.instance == null) {
+        if (System.currentTimeMillis() > initDeadline) {
+          Log.e(TAG, "Model initialization timed out after ${MODEL_INIT_TIMEOUT_MS / 1000}s")
+          setPreparing(false)
+          setInProgress(false)
+          return@launch
+        }
         delay(100)
       }
 

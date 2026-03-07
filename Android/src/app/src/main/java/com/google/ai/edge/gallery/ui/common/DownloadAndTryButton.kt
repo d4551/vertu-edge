@@ -282,7 +282,7 @@ fun DownloadAndTryButton(
           Log.d(TAG, "Model '${model.name}' needs auth. Start token exchange process...")
 
           // Get current token status
-          val tokenStatusAndData = modelManagerViewModel.getTokenStatusAndData()
+          val tokenStatusAndData = modelManagerViewModel.getLatestTokenStatusAndData()
 
           when (tokenStatusAndData.status) {
             // If token is not stored or expired, log in and request a new token.

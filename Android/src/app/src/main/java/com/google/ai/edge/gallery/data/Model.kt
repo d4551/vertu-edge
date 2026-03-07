@@ -134,6 +134,9 @@ data class Model(
    */
   val url: String = "",
 
+  /** Canonical repository/model reference for this downloadable artifact. */
+  val modelRef: String = "",
+
   /** Source registry for this model entry. */
   val source: String = "",
 
@@ -240,6 +243,15 @@ data class Model(
 
   /** Whether the LLM model supports mobile actions. */
   val llmSupportMobileActions: Boolean = false,
+
+  /** Whether the model satisfies the device AI mobile actions capability contract. */
+  val deviceAiSupportMobileActions: Boolean = false,
+
+  /** Whether the model satisfies the device AI RPA control capability contract. */
+  val deviceAiSupportRpaControls: Boolean = false,
+
+  /** Whether the model satisfies the device AI flow command capability contract. */
+  val deviceAiSupportFlowCommands: Boolean = false,
 
   /** The max token for llm model. */
   val llmMaxToken: Int = 0,
@@ -352,6 +364,27 @@ data class Model(
 
   fun getExtraDataFile(name: String): ModelDataFile? {
     return extraDataFiles.find { it.name == name }
+  }
+
+  fun supportsRequiredDeviceAiCapabilities(): Boolean {
+    return deviceAiSupportMobileActions &&
+      deviceAiSupportRpaControls &&
+      deviceAiSupportFlowCommands
+  }
+
+  /** Returns the canonical device-AI capability identifiers proven by this model entry. */
+  fun deviceAiProtocolCapabilities(): List<DeviceAiProtocolCapability> {
+    val capabilities = mutableListOf<DeviceAiProtocolCapability>()
+    if (deviceAiSupportMobileActions) {
+      capabilities += DeviceAiProtocolCapability.MOBILE_ACTIONS
+    }
+    if (deviceAiSupportRpaControls) {
+      capabilities += DeviceAiProtocolCapability.RPA_CONTROLS
+    }
+    if (deviceAiSupportFlowCommands) {
+      capabilities += DeviceAiProtocolCapability.FLOW_COMMANDS
+    }
+    return capabilities
   }
 
   private fun getTypedConfigValue(key: ConfigKey, valueType: ValueType, defaultValue: Any): Any {

@@ -9,6 +9,9 @@ data class VertuOAuthConfig(
   val redirectScheme: String,
 )
 
+/** Maximum time (ms) to wait for an LLM model instance to initialize before timing out. */
+const val MODEL_INIT_TIMEOUT_MS = 60_000L
+
 /** Runtime access point for non-hardcoded app configuration values. */
 object VertuRuntimeConfig {
   private const val DEFAULT_MODEL_SOURCE_BASE_URL = "https://huggingface.co"
@@ -21,6 +24,20 @@ object VertuRuntimeConfig {
   private const val DEFAULT_CONTROL_PLANE_POLL_ATTEMPTS = 180
   private const val DEFAULT_CONTROL_PLANE_DEFAULT_PULL_TIMEOUT_MS = 120_000
   private const val DEFAULT_CONTROL_PLANE_MODEL_STATE_ID_PREFIX = "model-state"
+  private const val DEFAULT_DEVICE_AI_REQUIRED_MODEL_REF =
+    "huggingface.co/mradermacher/AutoGLM-Phone-9B-Multilingual-GGUF"
+  private const val DEFAULT_DEVICE_AI_REQUIRED_MODEL_REVISION =
+    "5b34029a6b23a90aea2e377f1f9b273d1001638c"
+  private const val DEFAULT_DEVICE_AI_REQUIRED_MODEL_FILE =
+    "AutoGLM-Phone-9B-Multilingual.Q4_K_M.gguf"
+  private const val DEFAULT_DEVICE_AI_REQUIRED_MODEL_SHA256 =
+    "12b91074f0dfffee7e2732501ba8c5eecf3b1187dd08a91d71fb1e23437a073f"
+  private const val DEFAULT_DEVICE_AI_MODEL_DIRECTORY = "vertu-device-ai/models"
+  private const val DEFAULT_DEVICE_AI_PROTOCOL_TIMEOUT_MS = 900_000
+  private const val DEFAULT_DEVICE_AI_REPORT_MAX_AGE_MINUTES = 240
+  private const val DEFAULT_DEVICE_AI_DOWNLOAD_MAX_ATTEMPTS = 3
+  private const val DEFAULT_TINY_GARDEN_ASSET_BASE_URL = "https://appassets.androidplatform.net"
+  private const val DEFAULT_TINY_GARDEN_ASSET_PATH = "assets/tinygarden"
 
   private fun normalizeBaseUrl(raw: String, fallback: String): String {
     return raw.trim().ifBlank { fallback }.trimEnd('/')
@@ -73,6 +90,52 @@ object VertuRuntimeConfig {
     BuildConfig.VERTU_CONTROL_PLANE_MODEL_STATE_ID_PREFIX.trim()
       .trimEnd('-')
       .ifBlank { DEFAULT_CONTROL_PLANE_MODEL_STATE_ID_PREFIX }
+
+  val deviceAiRequiredModelRef: String =
+    BuildConfig.VERTU_REQUIRED_MODEL_REF.trim()
+      .ifBlank { DEFAULT_DEVICE_AI_REQUIRED_MODEL_REF }
+
+  val deviceAiRequiredModelRevision: String =
+    BuildConfig.VERTU_REQUIRED_MODEL_REVISION.trim()
+      .ifBlank { DEFAULT_DEVICE_AI_REQUIRED_MODEL_REVISION }
+
+  val deviceAiRequiredModelFileName: String =
+    BuildConfig.VERTU_REQUIRED_MODEL_FILE.trim()
+      .ifBlank { DEFAULT_DEVICE_AI_REQUIRED_MODEL_FILE }
+
+  val deviceAiRequiredModelSha256: String =
+    BuildConfig.VERTU_REQUIRED_MODEL_SHA256.trim()
+      .ifBlank { DEFAULT_DEVICE_AI_REQUIRED_MODEL_SHA256 }
+
+  val deviceAiManagedModelDirectory: String =
+    BuildConfig.VERTU_DEVICE_AI_MODEL_DIRECTORY.trim()
+      .trim('/')
+      .ifBlank { DEFAULT_DEVICE_AI_MODEL_DIRECTORY }
+
+  val deviceAiProtocolTimeoutMs: Int =
+    BuildConfig.VERTU_DEVICE_AI_PROTOCOL_TIMEOUT_MS.takeIf { it > 0 }
+      ?: DEFAULT_DEVICE_AI_PROTOCOL_TIMEOUT_MS
+
+  val deviceAiReportMaxAgeMinutes: Int =
+    BuildConfig.VERTU_DEVICE_AI_REPORT_MAX_AGE_MINUTES.takeIf { it > 0 }
+      ?: DEFAULT_DEVICE_AI_REPORT_MAX_AGE_MINUTES
+
+  val deviceAiDownloadMaxAttempts: Int =
+    BuildConfig.VERTU_DEVICE_AI_DOWNLOAD_MAX_ATTEMPTS.takeIf { it > 0 }
+      ?: DEFAULT_DEVICE_AI_DOWNLOAD_MAX_ATTEMPTS
+
+  val tinyGardenAssetBaseUrl: String = normalizeBaseUrl(
+    BuildConfig.VERTU_TINY_GARDEN_ASSET_BASE_URL,
+    DEFAULT_TINY_GARDEN_ASSET_BASE_URL,
+  )
+
+  val tinyGardenAssetPath: String =
+    BuildConfig.VERTU_TINY_GARDEN_ASSET_PATH.trim()
+      .trim('/')
+      .ifBlank { DEFAULT_TINY_GARDEN_ASSET_PATH }
+
+  val deviceAiHfToken: String =
+    BuildConfig.VERTU_DEVICE_AI_HF_TOKEN.trim()
 
   val appName: String = BuildConfig.VERTU_APP_NAME.ifBlank { "Vertu Edge" }
 

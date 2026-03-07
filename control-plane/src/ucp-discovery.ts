@@ -82,7 +82,7 @@ function isUcpManifest(value: object | JsonValue): value is UCPManifest {
  * Fetches the `.well-known/ucp` JSON manifest from external business servers.
  * Used by the Vertu AI Agent to dynamically discover purchase and checkout capabilities.
  */
-export async function discoverBusinessCapabilitiesWithResult(
+export async function discoverBusinessCapabilities(
   serverUrl: string,
 ): Promise<UCPDiscoverResult> {
   if (!URL.canParse(serverUrl)) {
@@ -163,13 +163,4 @@ function mapUcpErrorReason(details: string | undefined): UCPDiscoverError {
   if (details === "timeout") return "timeout";
   if (details === "network") return "network";
   return "not_found";
-}
-
-/**
- * UCP Discovery (legacy).
- * Returns manifest or null. Use discoverBusinessCapabilitiesWithResult for error details.
- */
-export async function discoverBusinessCapabilities(serverUrl: string): Promise<UCPManifest | null> {
-  const result = await discoverBusinessCapabilitiesWithResult(serverUrl);
-  return result.ok ? result.manifest : null;
 }

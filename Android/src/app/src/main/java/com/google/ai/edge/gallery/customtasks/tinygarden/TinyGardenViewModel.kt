@@ -17,10 +17,10 @@
 package com.google.ai.edge.gallery.customtasks.tinygarden
 
 import android.content.Context
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.ai.edge.gallery.R
+import com.google.ai.edge.gallery.common.StructuredLog
 import com.google.ai.edge.gallery.data.DataStoreRepository
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.ui.common.chat.ChatMessage
@@ -40,6 +40,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 private const val TAG = "AGTGViewModel"
 
@@ -68,9 +70,24 @@ constructor(
 ) : ViewModel() {
   protected val _uiState = MutableStateFlow(TinyGardenUiState())
   val uiState = _uiState.asStateFlow()
+  private val tinyGardenRunStateMutex = Mutex()
 
   private val _isResettingConversation = MutableStateFlow(false)
   private val isResettingConversation = _isResettingConversation.asStateFlow()
+
+  /**
+   * Returns true only on first launch; persists the "has run" flag immediately to avoid
+   * duplicate tutorial/help triggers across WebView lifecycle events.
+   */
+  suspend fun consumeTinyGardenFirstRun(): Boolean {
+    return tinyGardenRunStateMutex.withLock {
+      if (dataStoreRepository.getHasRunTinyGarden()) {
+        return@withLock false
+      }
+      dataStoreRepository.setHasRunTinyGarden(true)
+      true
+    }
+  }
 
   /**
    * Sends the user instruction to the model and processes the response.
@@ -90,19 +107,23 @@ constructor(
 
     // Count turn.
     incrementNumTurns()
-    Log.d(TAG, "Turn #: ${uiState.value.numTurns}")
+    StructuredLog.d(TAG, "tiny_garden_turn_incremented", "turn" to uiState.value.numTurns)
 
     // Add user prompt to history.
     this.addMessage(message = ChatMessageText(content = instructionText, side = ChatSide.USER))
 
     viewModelScope.launch(Dispatchers.Default) {
-      Log.d(TAG, "Start processing user instruction: '$instructionText'")
+      StructuredLog.d(
+        TAG,
+        "tiny_garden_instruction_processing_started",
+        "instructionText" to instructionText,
+      )
       setProcessing(processing = true)
 
       // Wait until the conversation is NOT resetting.
-      Log.d(TAG, "Waiting for any ongoing conversation reset to be done...")
+      StructuredLog.d(TAG, "tiny_garden_waiting_for_reset_completion")
       isResettingConversation.first { !it }
-      Log.d(TAG, "Done waiting. Start inference.")
+      StructuredLog.d(TAG, "tiny_garden_inference_started")
 
       val instance = model.instance as LlmModelInstance
       val conversation = instance.conversation
@@ -111,17 +132,22 @@ constructor(
         contents.add(Content.Text(instructionText))
       }
 
-      try {
-        val responseMessage = conversation.sendMessage(Contents.of(contents))
-        val response = responseMessage.toString()
-        Log.d(TAG, "Done processing user instruction. Response: $response")
-        onDone(response)
-      } catch (e: Exception) {
-        Log.e(TAG, "Failed to run inference", e)
-        onError(e.message ?: context.getString(R.string.unknown_error))
-      } finally {
-        setProcessing(processing = false)
+      runCatching {
+        conversation.sendMessage(Contents.of(contents)).toString()
       }
+        .onSuccess { response ->
+          StructuredLog.d(
+            TAG,
+            "tiny_garden_instruction_processing_finished",
+            "response" to response,
+          )
+          onDone(response)
+        }
+        .onFailure { error ->
+          StructuredLog.e(TAG, "tiny_garden_inference_failed", error)
+          onError(error.message ?: context.getString(R.string.unknown_error))
+        }
+      setProcessing(processing = false)
     }
   }
 
@@ -205,7 +231,11 @@ constructor(
           prevPlots = prevPlots,
           prevAction = prevAction,
         )
-      Log.d(TAG, "Current system prompt:\n$curSystemPrompt")
+      StructuredLog.d(
+        TAG,
+        "tiny_garden_conversation_reset_prompt_updated",
+        "systemPrompt" to curSystemPrompt,
+      )
       LlmChatModelHelper.resetConversation(
         model = model,
         supportImage = false,

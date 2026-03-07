@@ -42,7 +42,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.ui.theme.customColors
@@ -86,12 +87,13 @@ fun RotationalLoader(size: Dp) {
   val curScale = scaleProgress
 
   val gridSpacing = size * GRID_SPACING_FACTOR
+  val loadingLabel = stringResource(R.string.loading_indicator)
   LazyVerticalGrid(
     columns = GridCells.Fixed(2),
     horizontalArrangement = Arrangement.spacedBy(gridSpacing),
     verticalArrangement = Arrangement.spacedBy(gridSpacing),
     modifier =
-      Modifier.size(size).graphicsLayer { rotationZ = curRotationZ }.clearAndSetSemantics {},
+      Modifier.size(size).graphicsLayer { rotationZ = curRotationZ }.semantics { contentDescription = loadingLabel },
   ) {
     itemsIndexed(
       listOf(

@@ -50,6 +50,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import org.json.JSONObject
+import com.vertu.edge.core.flow.FlowExecutionState
 
 private const val TAG = "AGMAViewModel"
 
@@ -61,6 +65,30 @@ data class MobileActionsUiState(
   val modelResponse: String = "",
   val functionCallDetails: List<String> = listOf(),
   val noFunctionRecognized: Boolean = false,
+)
+
+/** Approval payload for a phone-automation run that requires user confirmation. */
+data class OperatorApprovalRequest(
+  val flowYaml: String,
+  val consentToken: String,
+  val correlationId: String,
+  val riskLevel: String,
+  val commandCount: Int,
+)
+
+/** One execution event emitted by conversational phone automation. */
+data class OperatorAutomationExecution(
+  val state: FlowExecutionState,
+  val message: String,
+  val approvalRequest: OperatorApprovalRequest? = null,
+)
+
+/** Aggregate result returned to the operator surface after a phone-automation prompt. */
+data class OperatorAutomationResult(
+  val assistantMessage: String,
+  val actionDetails: List<String>,
+  val executions: List<OperatorAutomationExecution>,
+  val state: FlowExecutionState,
 )
 
 @HiltViewModel
@@ -125,6 +153,82 @@ constructor(
     _uiState.update { _uiState.value.copy(noFunctionRecognized = value) }
   }
 
+  /** Runs a conversational operator prompt and executes any resulting phone actions inline. */
+  suspend fun executeOperatorPrompt(
+    model: Model,
+    userPrompt: String,
+    modelManagerViewModel: ModelManagerViewModel,
+  ): OperatorAutomationResult {
+    val recognizedActions = mutableListOf<Action>()
+    val tools = listOf(MobileActionsTools(onFunctionCalled = { recognizedActions.add(it) }))
+    val initializationError =
+      ensureOperatorModelReady(
+        model = model,
+        tools = tools,
+        modelManagerViewModel = modelManagerViewModel,
+      )
+    if (initializationError.isNotEmpty()) {
+      return OperatorAutomationResult(
+        assistantMessage = "",
+        actionDetails = listOf(),
+        executions =
+          listOf(
+            OperatorAutomationExecution(
+              state = FlowExecutionState.ERROR_NON_RETRYABLE,
+              message = initializationError,
+            )
+          ),
+        state = FlowExecutionState.ERROR_NON_RETRYABLE,
+      )
+    }
+
+    val assistantMessage = runOperatorInference(model = model, userPrompt = userPrompt, tools = tools)
+    if (recognizedActions.isEmpty()) {
+      val response =
+        assistantMessage.ifBlank {
+          appContext.getString(R.string.operator_phone_no_action_recognized)
+        }
+      return OperatorAutomationResult(
+        assistantMessage = response,
+        actionDetails = listOf(),
+        executions =
+          listOf(
+            OperatorAutomationExecution(
+              state = FlowExecutionState.EMPTY,
+              message = appContext.getString(R.string.operator_phone_no_action_recognized),
+            )
+          ),
+        state = FlowExecutionState.EMPTY,
+      )
+    }
+
+    val actionDetails = recognizedActions.map(::formatOperatorFunctionCall)
+    val executions = recognizedActions.map { action -> executeOperatorAction(action = action) }
+    return OperatorAutomationResult(
+      assistantMessage = assistantMessage,
+      actionDetails = actionDetails,
+      executions = executions,
+      state = summarizeExecutionState(executions),
+    )
+  }
+
+  /** Approves and replays a previously gated phone-automation flow. */
+  suspend fun approveOperatorPrompt(approval: OperatorApprovalRequest): OperatorAutomationResult {
+    val approvalAction =
+      ExecuteFlowAction(
+        flowYaml = approval.flowYaml,
+        consentToken = approval.consentToken,
+        correlationId = approval.correlationId,
+      )
+    val execution = executeOperatorAction(action = approvalAction)
+    return OperatorAutomationResult(
+      assistantMessage = appContext.getString(R.string.operator_phone_approval_started),
+      actionDetails = listOf(formatOperatorFunctionCall(approvalAction)),
+      executions = listOf(execution),
+      state = execution.state,
+    )
+  }
+
   fun processUserPrompt(
     model: Model,
     userPrompt: String,
@@ -177,7 +281,192 @@ constructor(
         .collect {
           setProcessing(processing = false)
           appendModelResponse(partialResponse = it.toString())
+      }
+    }
+  }
+
+  private suspend fun ensureOperatorModelReady(
+    model: Model,
+    tools: List<MobileActionsTools>,
+    modelManagerViewModel: ModelManagerViewModel,
+  ): String {
+    if (modelManagerViewModel.uiState.value.isModelInitialized(model = model) && model.instance != null) {
+      resetConversation(model = model, tools = tools)
+      return ""
+    }
+
+    return suspendCancellableCoroutine { continuation ->
+      modelManagerViewModel.setInitializationStatus(
+        model = model,
+        status = ModelInitializationStatus(status = ModelInitializationStatusType.INITIALIZING),
+      )
+      LlmChatModelHelper.initialize(
+        context = appContext,
+        model = model,
+        supportImage = false,
+        supportAudio = false,
+        onDone = { error ->
+          modelManagerViewModel.setInitializationStatus(
+            model = model,
+            status =
+              if (error.isBlank()) {
+                ModelInitializationStatus(status = ModelInitializationStatusType.INITIALIZED)
+              } else {
+                ModelInitializationStatus(
+                  status = ModelInitializationStatusType.ERROR,
+                  error = error,
+                )
+              },
+          )
+          if (continuation.isActive) {
+            continuation.resume(error)
+          }
+        },
+        systemInstruction = getSystemPrompt(),
+        tools = tools,
+      )
+    }
+  }
+
+  private suspend fun runOperatorInference(
+    model: Model,
+    userPrompt: String,
+    tools: List<MobileActionsTools>,
+  ): String {
+    setModelResponse(response = "")
+    setNoFunctionRecognized(value = false)
+    clearFunctionCallDetails()
+    return suspendCancellableCoroutine { continuation ->
+      processUserPrompt(
+        model = model,
+        userPrompt = userPrompt,
+        tools = tools,
+        onProcessDone = {
+          if (continuation.isActive) {
+            continuation.resume(uiState.value.modelResponse)
+          }
+        },
+        onError = { error ->
+          if (continuation.isActive) {
+            continuation.resume(error)
+          }
+        },
+      )
+    }
+  }
+
+  private suspend fun executeOperatorAction(action: Action): OperatorAutomationExecution {
+    val rawResult = performAction(action = action, context = appContext)
+    if (action is ExecuteFlowAction) {
+      return parseFlowExecutionResult(action = action, rawResult = rawResult)
+    }
+
+    return if (rawResult.isBlank()) {
+      OperatorAutomationExecution(
+        state = FlowExecutionState.SUCCESS,
+        message =
+          appContext.getString(
+            R.string.operator_phone_action_completed,
+            action.functionCallDetails.functionName,
+          ),
+      )
+    } else {
+      OperatorAutomationExecution(
+        state = FlowExecutionState.ERROR_NON_RETRYABLE,
+        message = rawResult,
+      )
+    }
+  }
+
+  private fun parseFlowExecutionResult(
+    action: ExecuteFlowAction,
+    rawResult: String,
+  ): OperatorAutomationExecution {
+    return runCatching {
+      val payload = JSONObject(rawResult)
+      when (payload.optString("state")) {
+        "success" ->
+          OperatorAutomationExecution(
+            state = FlowExecutionState.SUCCESS,
+            message =
+              payload.optString("message").ifBlank {
+                appContext.getString(R.string.operator_phone_flow_completed)
+              },
+          )
+        "requires_confirmation" -> {
+          val consent = payload.optJSONObject("consent")
+          OperatorAutomationExecution(
+            state = FlowExecutionState.LOADING,
+            message =
+              payload.optString("message").ifBlank {
+                appContext.getString(R.string.operator_phone_confirmation_required)
+              },
+            approvalRequest =
+              OperatorApprovalRequest(
+                flowYaml = action.flowYaml,
+                consentToken = consent?.optString("token").orEmpty(),
+                correlationId = payload.optString("correlationId"),
+                riskLevel = consent?.optString("riskLevel").orEmpty(),
+                commandCount = consent?.optInt("commandCount") ?: 0,
+              ),
+          )
         }
+        "retryable-error" ->
+          OperatorAutomationExecution(
+            state = FlowExecutionState.ERROR_RETRYABLE,
+            message = payload.optString("message"),
+          )
+        "non-retryable-error" ->
+          OperatorAutomationExecution(
+            state = FlowExecutionState.ERROR_NON_RETRYABLE,
+            message = payload.optString("message"),
+          )
+        else ->
+          OperatorAutomationExecution(
+            state = FlowExecutionState.LOADING,
+            message =
+              payload.optString("message").ifBlank {
+                appContext.getString(R.string.operator_phone_execution_in_progress)
+              },
+          )
+      }
+    }.getOrElse {
+      OperatorAutomationExecution(
+        state = FlowExecutionState.ERROR_RETRYABLE,
+        message =
+          rawResult.ifBlank {
+            appContext.getString(R.string.operator_phone_execution_unavailable)
+          },
+      )
+    }
+  }
+
+  private fun formatOperatorFunctionCall(action: Action): String {
+    val parameters = action.functionCallDetails.parameters
+    if (parameters.isEmpty()) {
+      return appContext.getString(
+        R.string.operator_phone_function_call_without_params,
+        action.functionCallDetails.functionName,
+      )
+    }
+    val renderedParameters = parameters.joinToString(separator = ", ") { "${it.first}=${it.second}" }
+    return appContext.getString(
+      R.string.operator_phone_function_call_with_params,
+      action.functionCallDetails.functionName,
+      renderedParameters,
+    )
+  }
+
+  private fun summarizeExecutionState(executions: List<OperatorAutomationExecution>): FlowExecutionState {
+    return when {
+      executions.any { it.state == FlowExecutionState.ERROR_NON_RETRYABLE } ->
+        FlowExecutionState.ERROR_NON_RETRYABLE
+      executions.any { it.state == FlowExecutionState.ERROR_RETRYABLE } ->
+        FlowExecutionState.ERROR_RETRYABLE
+      executions.any { it.approvalRequest != null } -> FlowExecutionState.LOADING
+      executions.any { it.state == FlowExecutionState.LOADING } -> FlowExecutionState.LOADING
+      executions.any { it.state == FlowExecutionState.EMPTY } -> FlowExecutionState.EMPTY
+      else -> FlowExecutionState.SUCCESS
     }
   }
 

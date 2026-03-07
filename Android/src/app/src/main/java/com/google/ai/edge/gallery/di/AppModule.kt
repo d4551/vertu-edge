@@ -27,12 +27,15 @@ import com.google.ai.edge.gallery.CutoutsSerializer
 import com.google.ai.edge.gallery.GalleryLifecycleProvider
 import com.google.ai.edge.gallery.SettingsSerializer
 import com.google.ai.edge.gallery.UserDataSerializer
+import com.google.ai.edge.gallery.common.VertuRuntimeConfig
 import com.google.ai.edge.gallery.data.DataStoreRepository
+import com.google.ai.edge.gallery.data.DeviceAiProtocolRunner
 import com.google.ai.edge.gallery.data.DefaultDataStoreRepository
 import com.google.ai.edge.gallery.data.DefaultDownloadRepository
 import com.google.ai.edge.gallery.data.DownloadRepository
 import com.google.ai.edge.gallery.data.CloudControlPlaneClient
 import com.google.ai.edge.gallery.data.HttpControlPlaneClient
+import com.google.ai.edge.gallery.data.HuggingFaceDownloadConfig
 import com.google.ai.edge.gallery.data.HuggingFaceModelManager
 import com.google.ai.edge.gallery.proto.BenchmarkResults
 import com.google.ai.edge.gallery.proto.CutoutCollection
@@ -167,7 +170,29 @@ internal object AppModule {
   @Provides
   @Singleton
   fun provideHuggingFaceModelManager(): HuggingFaceModelManager {
-    return HuggingFaceModelManager()
+    return HuggingFaceModelManager(
+      config = HuggingFaceDownloadConfig(maxAttempts = VertuRuntimeConfig.deviceAiDownloadMaxAttempts)
+    )
+  }
+
+  // Provides native Android device-AI protocol runner.
+  @Provides
+  @Singleton
+  fun provideDeviceAiProtocolRunner(
+    @ApplicationContext context: Context,
+    huggingFaceModelManager: HuggingFaceModelManager,
+  ): DeviceAiProtocolRunner {
+    val appStorageRoot = context.getExternalFilesDir(null) ?: context.filesDir
+    return DeviceAiProtocolRunner(
+      appStorageRoot = appStorageRoot,
+      downloadModel = { model, destination, token ->
+        huggingFaceModelManager.downloadModel(
+          model = model,
+          destination = destination,
+          token = token,
+        )
+      },
+    )
   }
 
   // Provides control-plane client for cloud AI/provider endpoints.

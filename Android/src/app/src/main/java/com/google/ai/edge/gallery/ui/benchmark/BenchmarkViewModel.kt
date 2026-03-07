@@ -35,16 +35,16 @@ import com.google.ai.edge.litertlm.benchmark
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
+import java.util.UUID
 import javax.inject.Inject
 import kotlin.math.ceil
 import kotlin.math.floor
-import kotlin.random.Random
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 private const val TAG = "AGBenchmarkVM"
 
@@ -87,11 +87,13 @@ constructor(
   val uiState = _uiState.asStateFlow()
 
   init {
-    // Load results from storage.
-    val storedResults = runBlocking { dataStoreRepository.getAllBenchmarkResults() }
-    Log.d(TAG, "Loaded ${storedResults.size} benchmark results")
-    setBenchmarkResults(results = storedResults)
-    collapseAll()
+    viewModelScope.launch {
+      // Load results from storage asynchronously.
+      val storedResults = withContext(Dispatchers.IO) { dataStoreRepository.getAllBenchmarkResults() }
+      Log.d(TAG, "Loaded ${storedResults.size} benchmark results")
+      setBenchmarkResults(results = storedResults)
+      collapseAll()
+    }
   }
 
   @OptIn(ExperimentalApi::class)
@@ -240,7 +242,7 @@ constructor(
   suspend fun addBenchmarkResult(result: BenchmarkResult): String {
     val newResults = _uiState.value.results.toMutableList()
     // Add the new result to the beginning of the list.
-    val newId = "${Random.nextDouble()}"
+    val newId = UUID.randomUUID().toString()
     newResults.add(
       0,
       BenchmarkResultInfo(
@@ -266,7 +268,7 @@ constructor(
             BenchmarkResultInfo(
               benchmarkResult = result,
               expanded = false,
-              id = "${Random.nextDouble()}",
+              id = UUID.randomUUID().toString(),
               basicInfoExpanded = false,
               statsExpanded = true,
             )

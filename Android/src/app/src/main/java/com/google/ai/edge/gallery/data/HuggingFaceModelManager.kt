@@ -1,10 +1,12 @@
 package com.google.ai.edge.gallery.data
 
-import android.util.Log
+import com.google.ai.edge.gallery.common.StructuredLog
 import java.io.File
 import java.io.RandomAccessFile
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
+import java.net.UnknownHostException
 import java.security.MessageDigest
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.Dispatchers
@@ -89,16 +91,19 @@ class HuggingFaceModelManager(
       }
 
       val error = attemptResult.exceptionOrNull()
-      val retryable = attempt < config.maxAttempts - 1
-      Log.e(TAG, "download failure: correlationId=$correlationId attempt=${attempt + 1}", error)
+      val failure = toFailure(error = error, correlationId = correlationId, canRetry = attempt < config.maxAttempts - 1)
+      StructuredLog.e(
+        TAG,
+        "hf_download_failed",
+        error,
+        "correlationId" to correlationId,
+        "attempt" to (attempt + 1),
+        "code" to failure.code,
+        "retryable" to failure.retryable,
+      )
 
-      if (!retryable) {
-        return ModelDownloadResult.Failure(
-          code = "HF_DOWNLOAD_FAILED",
-          message = error?.message ?: "Unknown Hugging Face download failure",
-          retryable = false,
-          correlationId = correlationId,
-        )
+      if (!failure.retryable) {
+        return failure
       }
 
       delay(backoffMs)
@@ -184,9 +189,12 @@ class HuggingFaceModelManager(
     val renamed = tempFile.renameTo(destination)
     check(renamed) { "Failed to finalize model file for ${model.name}" }
 
-    Log.i(
+    StructuredLog.d(
       TAG,
-      "download success: correlationId=$correlationId model=${model.name} bytes=${destination.length()}",
+      "hf_download_succeeded",
+      "correlationId" to correlationId,
+      "model" to model.name,
+      "bytes" to destination.length(),
     )
   }
 
@@ -203,5 +211,44 @@ class HuggingFaceModelManager(
       }
     }
     return digest.digest().joinToString(separator = "") { "%02x".format(it) }
+  }
+
+  private fun toFailure(
+    error: Throwable?,
+    correlationId: String,
+    canRetry: Boolean,
+  ): ModelDownloadResult.Failure {
+    val message = error?.message?.trim().orEmpty().ifBlank { "Unknown Hugging Face download failure" }
+    val code =
+      when {
+        message.contains("401") || message.contains("403") -> "HF_UNAUTHORIZED"
+        message.contains("404") -> "HF_MODEL_NOT_FOUND"
+        message.contains("Checksum mismatch", ignoreCase = true) -> "HF_CHECKSUM_MISMATCH"
+        message.contains("Failed to finalize", ignoreCase = true) -> "HF_IO_FAILURE"
+        error is SocketTimeoutException || error is UnknownHostException -> "HF_TRANSPORT_FAILURE"
+        else -> "HF_DOWNLOAD_FAILED"
+      }
+    val retryable = canRetry && isRetryable(error = error, message = message, code = code)
+    return ModelDownloadResult.Failure(
+      code = code,
+      message = message,
+      retryable = retryable,
+      correlationId = correlationId,
+    )
+  }
+
+  private fun isRetryable(error: Throwable?, message: String, code: String): Boolean {
+    if (code == "HF_UNAUTHORIZED" || code == "HF_CHECKSUM_MISMATCH" || code == "HF_IO_FAILURE") {
+      return false
+    }
+    if (error is SocketTimeoutException || error is UnknownHostException) {
+      return true
+    }
+    return message.contains("408") ||
+      message.contains("429") ||
+      message.contains("500") ||
+      message.contains("502") ||
+      message.contains("503") ||
+      message.contains("504")
   }
 }

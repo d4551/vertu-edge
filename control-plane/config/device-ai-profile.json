@@ -1,0 +1,26 @@
+{
+  "profileVersion": "1.0",
+  "requiredModelRef": "huggingface.co/mradermacher/AutoGLM-Phone-9B-Multilingual-GGUF",
+  "revision": "5b34029a6b23a90aea2e377f1f9b273d1001638c",
+  "requiredModelFile": "AutoGLM-Phone-9B-Multilingual.Q4_K_M.gguf",
+  "requiredModelSha256": "12b91074f0dfffee7e2732501ba8c5eecf3b1187dd08a91d71fb1e23437a073f",
+  "requiredCapabilities": [
+    "mobile_actions",
+    "rpa_controls",
+    "flow_commands"
+  ],
+  "runtimeRequirements": {
+    "localOllama": true,
+    "cloudHuggingFace": true
+  },
+  "platforms": {
+    "android": {
+      "required": true
+    },
+    "ios": {
+      "required": true
+    }
+  },
+  "protocolTimeoutMs": 900000,
+  "reportMaxAgeMinutes": 240
+}

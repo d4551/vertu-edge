@@ -1,6 +1,8 @@
 import {
+  type AppBuildFailureCode,
   type AppBuildEnvelope,
   type AppBuildResult,
+  type BuildKind,
   type BuildType,
   type CapabilityJobState,
   type ControlPlaneState,
@@ -8,8 +10,10 @@ import {
   type ModelPullResult,
   type ModelSource,
   createFlowCapabilityError,
+  isSupportedBuildType,
   MAX_JOB_LOG_CHARS,
 } from "../../contracts/flow-contracts";
+import { parseAppBuildFailureMetadata } from "../../shared/app-build-failures";
 import {
   APP_BUILD_IN_PROGRESS_REASON,
   APP_BUILD_JOB_NOT_FOUND_REASON,
@@ -22,7 +26,6 @@ import {
   MODEL_PULL_JOB_NOT_FOUND_REASON,
   MODEL_PULL_JOB_PAYLOAD_INVALID_REASON,
   MODEL_PULL_PAUSED_REASON,
-  SUPPORTED_BUILD_TYPES,
   MAX_MODEL_PULL_TIMEOUT_MS,
   parseKnownModelSourceId,
 } from "./config";
@@ -51,7 +54,7 @@ export interface ModelPullJobPayload {
 /** Persisted payload for app build capabilities. */
 export interface AppBuildJobPayload {
   /** Build target platform. */
-  platform: "android" | "ios";
+  platform: BuildKind;
   /** Build variant. */
   buildType: BuildType;
   /** Optional build variant for app flavor selection. */
@@ -65,8 +68,6 @@ export interface AppBuildJobPayload {
   /** Optional caller-provided correlation id. */
   correlationId?: string;
 }
-
-const SUPPORTED_BUILD_TYPES_SET = new Set<string>(SUPPORTED_BUILD_TYPES);
 
 /** Serialize model pull payloads into deterministic storage format. */
 export function serializeModelPullPayload(payload: ModelPullJobPayload): string {
@@ -174,7 +175,7 @@ export function parseAppBuildPayload(rawPayload: string): AppBuildJobPayload | n
   const correlationId = params.get("correlationId");
 
   if (
-    (platform !== "android" && platform !== "ios")
+    (platform !== "android" && platform !== "ios" && platform !== "desktop")
     || buildType === null
     || skipTests === null
     || clean === null
@@ -232,7 +233,7 @@ function parseBuildType(rawBuildType: string | null): BuildType | null {
 }
 
 function isBuildTypeValue(value: string): value is BuildType {
-  return SUPPORTED_BUILD_TYPES_SET.has(value);
+  return isSupportedBuildType(value);
 }
 
 /** Build a complete `ModelPullEnvelope` from a persisted job row. */
@@ -385,6 +386,7 @@ export function buildAppBuildEnvelope(job: CapabilityJobRecord | null): AppBuild
     };
   }
 
+  const buildFailure = resolveAppBuildFailure(job.stderr);
   const data: AppBuildResult = {
     platform: payload.platform,
     buildType: payload.buildType,
@@ -394,6 +396,12 @@ export function buildAppBuildEnvelope(job: CapabilityJobRecord | null): AppBuild
     stdout: truncateJobLog(job.stdout),
     stderr: truncateJobLog(job.stderr),
     artifactPath: job.artifactPath,
+    ...(buildFailure
+      ? {
+        failureCode: buildFailure.code,
+        failureMessage: buildFailure.message,
+      }
+      : {}),
     artifact: parseArtifactMetadata(job.stdout, job.stderr, job.artifactPath, payload.correlationId) ?? undefined,
     elapsedMs: resolveJobElapsedMs(job),
   };
@@ -433,6 +441,7 @@ export function buildAppBuildEnvelope(job: CapabilityJobRecord | null): AppBuild
       ? createFlowCapabilityError({
         commandIndex: -1,
         command: payload.platform,
+        ...(buildFailure ? { code: buildFailure.code } : {}),
         reason: mismatchReason,
         retryable: false,
         surface: "app_build",
@@ -440,6 +449,10 @@ export function buildAppBuildEnvelope(job: CapabilityJobRecord | null): AppBuild
       })
       : undefined,
   };
+}
+
+function resolveAppBuildFailure(stderr: string): { readonly code: AppBuildFailureCode; readonly message: string } | null {
+  return parseAppBuildFailureMetadata(stderr);
 }
 
 function deriveFailureMismatch(

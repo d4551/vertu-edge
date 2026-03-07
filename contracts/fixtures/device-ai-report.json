@@ -1,0 +1,100 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "2026-03-06T00:00:00.000Z",
+  "correlationId": "fixture-device-ai-correlation",
+  "profile": {
+    "profileVersion": "1.0",
+    "requiredModelRef": "huggingface.co/mradermacher/AutoGLM-Phone-9B-Multilingual-GGUF",
+    "revision": "5b34029a6b23a90aea2e377f1f9b273d1001638c",
+    "requiredModelFile": "AutoGLM-Phone-9B-Multilingual.Q4_K_M.gguf",
+    "requiredModelSha256": "12b91074f0dfffee7e2732501ba8c5eecf3b1187dd08a91d71fb1e23437a073f",
+    "requiredCapabilities": [
+      "mobile_actions",
+      "rpa_controls",
+      "flow_commands"
+    ],
+    "runtimeRequirements": {
+      "localOllama": true,
+      "cloudHuggingFace": true
+    },
+    "platforms": {
+      "android": {
+        "required": true
+      },
+      "ios": {
+        "required": true
+      }
+    },
+    "protocolTimeoutMs": 900000,
+    "reportMaxAgeMinutes": 240
+  },
+  "runtime": {
+    "localOllama": {
+      "required": true,
+      "available": true,
+      "message": "Ollama tags endpoint reachable"
+    },
+    "cloudHuggingFace": {
+      "required": true,
+      "available": true,
+      "message": "Hugging Face whoami endpoint reachable"
+    }
+  },
+  "model": {
+    "modelRef": "huggingface.co/mradermacher/AutoGLM-Phone-9B-Multilingual-GGUF",
+    "revision": "5b34029a6b23a90aea2e377f1f9b273d1001638c",
+    "fileName": "AutoGLM-Phone-9B-Multilingual.Q4_K_M.gguf",
+    "downloaded": true,
+    "verified": true,
+    "artifactPath": "/tmp/device-ai/artifacts/autoglm.bin",
+    "sha256": "12b91074f0dfffee7e2732501ba8c5eecf3b1187dd08a91d71fb1e23437a073f",
+    "sizeBytes": 123456,
+    "capabilities": [
+      "mobile_actions",
+      "rpa_controls",
+      "flow_commands"
+    ]
+  },
+  "platforms": {
+    "android": {
+      "platform": "android",
+      "required": true,
+      "status": "pass",
+      "deviceReady": true,
+      "stagingReady": true,
+      "smokeReady": true,
+      "stages": [
+        {
+          "stage": "android-preflight",
+          "status": "pass",
+          "correlationId": "fixture-android-preflight",
+          "startedAt": "2026-03-06T00:00:00.000Z",
+          "endedAt": "2026-03-06T00:00:01.000Z",
+          "message": "Android preflight passed",
+          "retryable": false
+        }
+      ]
+    },
+    "ios": {
+      "platform": "ios",
+      "required": true,
+      "status": "pass",
+      "deviceReady": true,
+      "stagingReady": true,
+      "smokeReady": true,
+      "stages": [
+        {
+          "stage": "ios-preflight",
+          "status": "pass",
+          "correlationId": "fixture-ios-preflight",
+          "startedAt": "2026-03-06T00:00:00.000Z",
+          "endedAt": "2026-03-06T00:00:01.000Z",
+          "message": "iOS preflight passed",
+          "retryable": false
+        }
+      ]
+    }
+  },
+  "status": "pass",
+  "failures": []
+}

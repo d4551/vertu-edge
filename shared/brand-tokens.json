@@ -1,0 +1,36 @@
+{
+  "colors": {
+    "gold": "#D4B978",
+    "goldDeep": "#C4A55E",
+    "goldLight": "#E8D9A8",
+    "black": "#080808",
+    "charcoal": "#111111",
+    "cream": "#F2EDE5",
+    "ivory": "#FAF7F2"
+  },
+  "semantic": {
+    "success": { "light": "#5A7F3A", "dark": "#A8D17B" },
+    "warning": { "light": "#8F6E2A", "dark": "#E8D9A8" },
+    "error": { "light": "#B3261E", "dark": "#F2B8B5" },
+    "info": { "light": "#4A6FA5", "dark": "#93B8E8" }
+  },
+  "shape": {
+    "panel": 28,
+    "input": 24,
+    "bubble": 22,
+    "button": 18,
+    "chip": 999
+  },
+  "spacing": {
+    "panelPadding": 18,
+    "panelGap": 14,
+    "chipPaddingH": 12,
+    "chipPaddingV": 9,
+    "buttonPaddingH": 16,
+    "buttonPaddingV": 12,
+    "iconGap": 8
+  },
+  "typography": {
+    "roles": ["display", "heading", "title", "body", "label", "code"]
+  }
+}

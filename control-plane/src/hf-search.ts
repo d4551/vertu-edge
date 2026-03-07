@@ -4,7 +4,7 @@
  * No dependencies — relies on Bun's native fetch.
  */
 
-import { safeParseJson, type JsonRecord, type JsonValue } from "./config";
+import { safeParseJson, RESPONSE_BODY_READ_TIMEOUT_MS, type JsonRecord, type JsonValue } from "./config";
 import type { HfModelSearchHit } from "../../contracts/flow-contracts";
 
 const HF_API_BASE = "https://huggingface.co/api/models";
@@ -82,12 +82,9 @@ export async function searchHfModels(options: HfSearchOptions): Promise<HfSearch
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
   const fetchResult = await fetch(url.toString(), {
     headers,
-    signal: controller.signal,
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   })
     .then((response) => ({
       ok: true as const,
@@ -95,11 +92,7 @@ export async function searchHfModels(options: HfSearchOptions): Promise<HfSearch
     }), () => ({
       ok: false as const,
       reason: "HuggingFace API request failed.",
-    }))
-    .then((result) => {
-      clearTimeout(timeout);
-      return result;
-    });
+    }));
 
   if (!fetchResult.ok) {
     return {
@@ -118,7 +111,12 @@ export async function searchHfModels(options: HfSearchOptions): Promise<HfSearch
     };
   }
 
-  const payloadText = await response.text();
+  const payloadText = await Promise.race([
+    response.text(),
+    new Promise<never>((_resolve, reject) =>
+      setTimeout(() => reject(new Error(`HuggingFace response body read timed out after ${RESPONSE_BODY_READ_TIMEOUT_MS}ms`)), RESPONSE_BODY_READ_TIMEOUT_MS),
+    ),
+  ]);
   const payload = safeParseJson<JsonValue[]>(payloadText);
   if (!payload.ok || !Array.isArray(payload.data)) {
     return {

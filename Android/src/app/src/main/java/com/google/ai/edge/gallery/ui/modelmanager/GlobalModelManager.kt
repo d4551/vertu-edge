@@ -75,7 +75,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -125,6 +124,7 @@ fun GlobalModelManager(
     rememberLauncherForActivityResult(
       contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
+      viewModel.clearOperatorExternalOverlayState()
       if (result.resultCode == android.app.Activity.RESULT_OK) {
         result.data?.data?.let { uri ->
           val fileName = getFileName(context = context, uri = uri)
@@ -370,6 +370,7 @@ fun GlobalModelManager(
                     // Single select.
                     putExtra(Intent.EXTRA_ALLOW_MULTIPLE, false)
                   }
+                viewModel.setOperatorExternalOverlayState(OperatorExternalOverlayState.MODEL_IMPORT_PICKER)
                 filePickerLauncher.launch(intent)
               }
             }
@@ -384,7 +385,7 @@ fun GlobalModelManager(
           modifier = Modifier.fillMaxWidth().padding(16.dp),
         ) {
           Icon(Icons.AutoMirrored.Outlined.NoteAdd, contentDescription = stringResource(R.string.from_local_model_file))
-          Text(stringResource(R.string.from_local_model_file), modifier = Modifier.clearAndSetSemantics {})
+          Text(stringResource(R.string.from_local_model_file))
         }
       }
     }

@@ -1,5 +1,5 @@
-import { dirname, join } from "path";
-import { mkdir } from "fs/promises";
+import { dirname, join } from "node:path";
+import { mkdir } from "node:fs/promises";
 import {
   type FlowCapabilityError,
   type FlowCommand,
@@ -25,7 +25,16 @@ import {
   FLOW_ADAPTER_COMMAND_TIMEOUT_MS,
   FLOW_RUN_MAX_ATTEMPTS,
   FLOW_RUN_RETRY_DELAY_MS,
+  FLOW_ENGINE_WAIT_FOR_ANIMATION_DEFAULT_MS,
+  FLOW_ENGINE_MAX_RETRY_DELAY_MS,
+  FLOW_ENGINE_ADB_SWIPE_DURATION_MS,
+  FLOW_ENGINE_ADB_SWIPE_DISTANCE_FRACTION_DEFAULT,
+  FLOW_ENGINE_ADB_SCROLL_DISTANCE_FRACTION_DEFAULT,
+  IOS_REMOTE_AGENT_URL,
+  ANDROID_REMOTE_AGENT_URL,
 } from "./config";
+import { driverRegistry } from "./drivers/registry";
+import type { RpaTargetAdapter, CommandExecutionResult } from "./drivers/driver.interface";
 
 const FLOW_ARTIFACT_PREFIX = "vertu-flow";
 
@@ -104,15 +113,7 @@ export interface FlowExecutionHooks {
   }) => void | Promise<void>;
 }
 
-interface RpaTargetAdapter {
-  readonly target: FlowRunTarget;
-  listRequirements(): Promise<FlowCapabilityRequirement[]>;
-  validateTargetReady(): Promise<FlowCapabilityError | null>;
-  supportsCommand(commandType: FlowCommand["type"]): boolean;
-  executeCommand(command: FlowCommand, appId: string, timeoutMs: number, correlationId: string): Promise<CommandExecutionResult>;
-}
-
-type CommandExecutionResult = Omit<FlowCommandResult, "commandIndex" | "commandType" | "attempts">;
+// RpaTargetAdapter and CommandExecutionResult are imported from ./drivers/driver.interface
 
 function resolvePolicy(options: FlowExecutionOptions): FlowRunPolicy {
   const maxAttempts = options.maxAttempts ?? FLOW_RUN_MAX_ATTEMPTS;
@@ -284,9 +285,7 @@ export class RPADriver {
         return normalizedResult;
       }
 
-      // Cap the retry delay at 30 seconds to prevent unbounded backoff growth.
-      const MAX_RETRY_DELAY_MS = 30_000;
-      await wait(Math.min(policy.retryDelayMs * attempt, MAX_RETRY_DELAY_MS));
+      await wait(Math.min(policy.retryDelayMs * attempt, FLOW_ENGINE_MAX_RETRY_DELAY_MS));
     }
 
     const fallbackError = lastFailure ?? createFlowCapabilityError({
@@ -342,15 +341,24 @@ function createUnsupportedCommandResult(
 }
 
 function createAdapter(target: FlowRunTarget): RpaTargetAdapter {
-  if (target === "android") return new AndroidAdapter();
-  if (target === "ios") return new IosAdapter();
-  if (target === "osx") return new DesktopAdapter("osx");
-  if (target === "windows") return new DesktopAdapter("windows");
-  return new DesktopAdapter("linux");
+  return driverRegistry.create(target);
 }
+
+/** Register built-in driver adapters. Called once at module load. */
+function registerBuiltinDrivers(): void {
+  driverRegistry.register("android", () => new AndroidAdapter());
+  driverRegistry.register("ios", () => new IosAdapter());
+  driverRegistry.register("osx", () => new DesktopAdapter("osx"));
+  driverRegistry.register("windows", () => new DesktopAdapter("windows"));
+  driverRegistry.register("linux", () => new DesktopAdapter("linux"));
+}
+
+// Register built-in drivers at module initialization.
+registerBuiltinDrivers();
 
 class AndroidAdapter implements RpaTargetAdapter {
   public readonly target: FlowRunTarget = "android";
+  private readonly remoteUrl = ANDROID_REMOTE_AGENT_URL;
   private readonly supported = new Set<FlowCommand["type"]>([
     "launchApp",
     "tapOn",
@@ -361,6 +369,7 @@ class AndroidAdapter implements RpaTargetAdapter {
     "scroll",
     "swipe",
     "screenshot",
+    "clipboardWrite",
     "hideKeyboard",
     "waitForAnimation",
     "selectOption",
@@ -371,12 +380,24 @@ class AndroidAdapter implements RpaTargetAdapter {
   }
 
   public async listRequirements(): Promise<FlowCapabilityRequirement[]> {
+    if (this.remoteUrl) {
+      const reachable = await isRemoteAgentReachable(this.remoteUrl);
+      return [
+        {
+          id: "android_remote_agent",
+          description: `Remote Android agent at ${this.remoteUrl}`,
+          required: true,
+          installed: reachable,
+        },
+      ];
+    }
+
     const adbAvailable = await isCommandAvailable(ANDROID_COMMAND, ["version"]);
     const connectedDevice = adbAvailable ? (await listAdbDevices()).length > 0 : false;
     return [
       {
         id: "adb",
-        description: "Android Debug Bridge (adb) is installed and available on PATH",
+        description: "Android Debug Bridge (adb) is installed and available on PATH (or set ANDROID_REMOTE_AGENT_URL)",
         required: true,
         installed: adbAvailable,
       },
@@ -415,10 +436,16 @@ class AndroidAdapter implements RpaTargetAdapter {
     correlationId: string,
   ): Promise<CommandExecutionResult> {
     if (command.type === "waitForAnimation") {
-      await wait(command.timeoutMs ?? 600);
+      await wait(command.timeoutMs ?? FLOW_ENGINE_WAIT_FOR_ANIMATION_DEFAULT_MS);
       return { state: "success", message: "waitForAnimation executed successfully" };
     }
 
+    // Remote agent mode — forward the entire command over HTTP.
+    if (this.remoteUrl) {
+      return executeRemoteCommand(this.remoteUrl, command, appId, timeoutMs, correlationId);
+    }
+
+    // Local adb mode.
     if (command.type === "launchApp") {
       const launch = await spawnText(ANDROID_COMMAND, ["shell", "monkey", "-p", appId, "-c", "android.intent.category.LAUNCHER", "1"], timeoutMs);
       if (!launch.ok) {
@@ -515,12 +542,23 @@ class AndroidAdapter implements RpaTargetAdapter {
       return this.executeCommand(inputCommand, appId, timeoutMs, correlationId);
     }
 
+    if (command.type === "clipboardWrite") {
+      // Android 10+ exposes `cmd clipboard set` via adb shell.
+      const escaped = command.value.replace(/'/g, "'\\''");
+      const clip = await spawnText(ANDROID_COMMAND, ["shell", "cmd", "clipboard", "set", escaped], timeoutMs);
+      if (!clip.ok) {
+        return asCommandFailure(command.type, clip.error, correlationId, "runtime", false);
+      }
+      return { state: "success", message: "clipboardWrite executed successfully" };
+    }
+
     return unsupportedForSelector(command.type, `${command.type} is unsupported on android adapter`, correlationId);
   }
 }
 
 class IosAdapter implements RpaTargetAdapter {
   public readonly target: FlowRunTarget = "ios";
+  private readonly remoteUrl = IOS_REMOTE_AGENT_URL;
   private readonly supported = new Set<FlowCommand["type"]>([
     "launchApp",
     "tapOn",
@@ -542,6 +580,20 @@ class IosAdapter implements RpaTargetAdapter {
   }
 
   public async listRequirements(): Promise<FlowCapabilityRequirement[]> {
+    // Remote agent mode — only need reachability, not local macOS.
+    if (this.remoteUrl) {
+      const reachable = await isRemoteAgentReachable(this.remoteUrl);
+      return [
+        {
+          id: "ios_remote_agent",
+          description: `Remote iOS agent at ${this.remoteUrl}`,
+          required: true,
+          installed: reachable,
+        },
+      ];
+    }
+
+    // Local mode — requires macOS + xcrun + booted simulator.
     const hostOk = process.platform === "darwin";
     const xcrunAvailable = hostOk ? await isCommandAvailable(IOS_COMMAND, ["simctl", "list"]) : false;
     const bootedAvailable = hostOk && xcrunAvailable ? await hasBootedIosSimulator() : false;
@@ -549,7 +601,7 @@ class IosAdapter implements RpaTargetAdapter {
     return [
       {
         id: "macos",
-        description: "iOS automation requires macOS host",
+        description: "iOS automation requires macOS host (or set IOS_REMOTE_AGENT_URL)",
         required: true,
         installed: hostOk,
       },
@@ -580,7 +632,7 @@ class IosAdapter implements RpaTargetAdapter {
       code: "IOS_TARGET_NOT_READY",
       category: "dependency",
       reason: `iOS target is not ready: ${missing.description}`,
-      retryable: missing.id === "ios_simulator_booted",
+      retryable: missing.id === "ios_simulator_booted" || missing.id === "ios_remote_agent",
       surface: "flow",
       resource: missing.id,
     });
@@ -593,10 +645,16 @@ class IosAdapter implements RpaTargetAdapter {
     correlationId: string,
   ): Promise<CommandExecutionResult> {
     if (command.type === "waitForAnimation") {
-      await wait(command.timeoutMs ?? 600);
+      await wait(command.timeoutMs ?? FLOW_ENGINE_WAIT_FOR_ANIMATION_DEFAULT_MS);
       return { state: "success", message: "waitForAnimation executed successfully" };
     }
 
+    // Remote agent mode — forward the entire command over HTTP.
+    if (this.remoteUrl) {
+      return executeRemoteCommand(this.remoteUrl, command, appId, timeoutMs, correlationId);
+    }
+
+    // Local xcrun/simctl mode.
     if (command.type === "launchApp") {
       const launched = await spawnText(IOS_COMMAND, ["simctl", "launch", "booted", appId], timeoutMs);
       if (!launched.ok) {
@@ -655,7 +713,7 @@ class IosAdapter implements RpaTargetAdapter {
     ) {
       return unsupportedForSelector(
         command.type,
-        "iOS CLI adapter does not yet execute this command directly; use a dedicated iOS runtime.",
+        "iOS CLI adapter does not yet execute this command directly; use a dedicated iOS runtime or set IOS_REMOTE_AGENT_URL.",
         correlationId,
       );
     }
@@ -770,7 +828,7 @@ class DesktopAdapter implements RpaTargetAdapter {
     correlationId: string,
   ): Promise<CommandExecutionResult> {
     if (command.type === "waitForAnimation") {
-      await wait(command.timeoutMs ?? 600);
+      await wait(command.timeoutMs ?? FLOW_ENGINE_WAIT_FOR_ANIMATION_DEFAULT_MS);
       return { state: "success", message: "waitForAnimation executed successfully" };
     }
 
@@ -1126,7 +1184,7 @@ async function performAndroidSwipe(
   const height = size.height;
   const centerX = Math.floor(width / 2);
   const centerY = Math.floor(height / 2);
-  const fraction = command.type === "swipe" ? command.distanceFraction ?? 0.6 : 0.5;
+  const fraction = command.type === "swipe" ? command.distanceFraction ?? FLOW_ENGINE_ADB_SWIPE_DISTANCE_FRACTION_DEFAULT : FLOW_ENGINE_ADB_SCROLL_DISTANCE_FRACTION_DEFAULT;
   const xDelta = Math.floor((width * fraction) / 2);
   const yDelta = Math.floor((height * fraction) / 2);
 
@@ -1160,7 +1218,7 @@ async function performAndroidSwipe(
     String(startY),
     String(endX),
     String(endY),
-    "200",
+    String(FLOW_ENGINE_ADB_SWIPE_DURATION_MS),
   ], timeoutMs);
 
   return swipe.ok ? { ok: true } : { ok: false, error: swipe.error };
@@ -1301,6 +1359,62 @@ async function hasBootedIosSimulator(): Promise<boolean> {
   }
 
   return list.stdout.includes("Booted");
+}
+
+/**
+ * Checks if a remote driver agent HTTP endpoint is reachable.
+ * Expects the agent to respond to GET /health with a 2xx status.
+ */
+async function isRemoteAgentReachable(baseUrl: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DEFAULT_ADAPTER_COMMAND_TIMEOUT_MS);
+  const result = await Promise.resolve()
+    .then(() => fetch(`${baseUrl}/health`, { signal: controller.signal }))
+    .then(
+      (response) => response.ok,
+      () => false,
+    )
+    .finally(() => clearTimeout(timer));
+  return result;
+}
+
+/** Buffer (ms) added to command timeout for remote agent HTTP requests. */
+const REMOTE_AGENT_TIMEOUT_BUFFER_MS = 5_000;
+
+/**
+ * Forwards a flow command to a remote driver agent via HTTP POST.
+ * The agent contract: POST /execute with JSON body { command, appId, timeoutMs, correlationId }.
+ * Expected response: JSON { state, message, error?, artifactPath?, artifact? }.
+ */
+async function executeRemoteCommand(
+  baseUrl: string,
+  command: FlowCommand,
+  appId: string,
+  timeoutMs: number,
+  correlationId: string,
+): Promise<CommandExecutionResult> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs + REMOTE_AGENT_TIMEOUT_BUFFER_MS);
+  const result: CommandExecutionResult = await Promise.resolve()
+    .then(() =>
+      fetch(`${baseUrl}/execute`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ command, appId, timeoutMs, correlationId }),
+        signal: controller.signal,
+      }),
+    )
+    .then(
+      async (response) => {
+        if (!response.ok) {
+          return asCommandFailure(command.type, `Remote agent returned ${response.status}`, correlationId, "runtime", true);
+        }
+        return (await response.json()) as CommandExecutionResult;
+      },
+      (failure: FailureValue) => asCommandFailure(command.type, normalizeFailureMessage(failure), correlationId, "runtime", true),
+    )
+    .finally(() => clearTimeout(timer));
+  return result;
 }
 
 async function ensureArtifactDirectory(): Promise<string> {

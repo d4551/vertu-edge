@@ -28,7 +28,9 @@ import com.google.ai.edge.gallery.AppLifecycleProvider
 import com.google.ai.edge.gallery.BuildConfig
 import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.common.ProjectConfig
+import com.google.ai.edge.gallery.common.StructuredLog
 import com.google.ai.edge.gallery.common.VertuRuntimeConfig
+import com.google.ai.edge.gallery.common.normalizeAppLocaleTag
 import com.google.ai.edge.gallery.common.getJsonResponseWithRetry
 import com.google.ai.edge.gallery.customtasks.common.CustomTask
 import com.google.ai.edge.gallery.data.Accelerator
@@ -46,14 +48,21 @@ import com.google.ai.edge.gallery.data.ModelAllowlist
 import com.google.ai.edge.gallery.data.ModelDownloadStatus
 import com.google.ai.edge.gallery.data.ModelDownloadStatusType
 import com.google.ai.edge.gallery.data.NumberSliderConfig
+import com.google.ai.edge.gallery.data.AiWorkflowJobEnvelope
+import com.google.ai.edge.gallery.data.AiWorkflowRequest
 import com.google.ai.edge.gallery.data.CloudChatAudioPayload
 import com.google.ai.edge.gallery.data.CloudChatRequest
-import com.google.ai.edge.gallery.data.CloudChatEnvelope
 import com.google.ai.edge.gallery.data.CloudControlPlaneClient
 import com.google.ai.edge.gallery.data.CloudModelOptionsResult
 import com.google.ai.edge.gallery.data.CloudModelSourceDescriptor
 import com.google.ai.edge.gallery.data.CloudModelPullEnvelope
 import com.google.ai.edge.gallery.data.CloudModelPullRequest
+import com.google.ai.edge.gallery.data.DeviceAiProtocolLaunchRequest
+import com.google.ai.edge.gallery.data.DeviceAiProtocolRunRequest
+import com.google.ai.edge.gallery.data.DeviceAiProtocolRunResult
+import com.google.ai.edge.gallery.data.DeviceAiProtocolRunner
+import com.google.ai.edge.gallery.data.DeviceAiProtocolTerminalState
+import com.google.ai.edge.gallery.data.DeviceAiProtocolTrigger
 import com.google.ai.edge.gallery.data.TMP_FILE_EXT
 import com.google.ai.edge.gallery.data.Task
 import com.google.ai.edge.gallery.data.ValueType
@@ -61,6 +70,7 @@ import com.google.ai.edge.gallery.data.createLlmChatConfigs
 import com.google.ai.edge.gallery.proto.AccessTokenData
 import com.google.ai.edge.gallery.proto.ImportedModel
 import com.google.ai.edge.gallery.proto.Theme
+import com.google.ai.edge.gallery.ui.theme.ThemeSettings
 import com.google.gson.Gson
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -71,11 +81,12 @@ import javax.inject.Inject
 import kotlin.collections.sortedWith
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import net.openid.appauth.AuthorizationException
@@ -119,6 +130,67 @@ enum class TokenRequestResultType {
 data class TokenStatusAndData(val status: TokenStatus, val data: AccessTokenData?)
 
 data class TokenRequestResult(val status: TokenRequestResultType, val errorMessage: String? = null)
+
+/** External overlay state owned by the operator shell. */
+enum class OperatorExternalOverlayState {
+  NONE,
+  MODEL_IMPORT_PICKER,
+}
+
+/** Role used by the conversation-first operator timeline. */
+enum class OperatorTimelineRole {
+  USER,
+  ASSISTANT,
+  SYSTEM,
+  RUN,
+}
+
+/** Timeline entry for operator chat, runtime actions, and background execution updates. */
+data class OperatorTimelineEntry(
+  val id: String,
+  val role: OperatorTimelineRole,
+  val title: String,
+  val body: String,
+  val state: FlowExecutionState = FlowExecutionState.SUCCESS,
+  val timestampMs: Long = System.currentTimeMillis(),
+)
+
+/** Canonical readiness state for the required device model. */
+enum class RequiredModelReadinessState {
+  NOT_INSTALLED,
+  DOWNLOADING,
+  VERIFYING,
+  READY,
+  IN_USE,
+  FAILED,
+}
+
+/** Capability badge rendered by operator runtime surfaces. */
+data class OperatorRuntimeCapability(
+  val key: String,
+  val label: String,
+  val available: Boolean,
+)
+
+/** Required-model readiness summary rendered by operator runtime surfaces. */
+data class RequiredModelReadiness(
+  val state: RequiredModelReadinessState,
+  val title: String,
+  val detail: String,
+  val actionLabel: String,
+)
+
+/** Shared runtime summary rendered by operator home, bubble, and admin surfaces. */
+data class OperatorRuntimeSummary(
+  val activeProvider: String,
+  val activeCloudModel: String,
+  val activeLocalModel: String,
+  val runtimeReady: Boolean,
+  val providerState: FlowExecutionState,
+  val modelState: FlowExecutionState,
+  val pullState: FlowExecutionState,
+  val capabilities: List<OperatorRuntimeCapability>,
+)
 
 data class ModelManagerUiState(
   /** A list of tasks available in the application. */
@@ -176,6 +248,7 @@ data class ModelManagerUiState(
 
   /** Chat state. */
   val cloudChatMessage: String = "",
+  val cloudConversationId: String = "",
   val cloudChatState: FlowExecutionState = FlowExecutionState.IDLE,
   val cloudChatStateMessage: String = "",
   val cloudChatReply: String = "",
@@ -188,6 +261,28 @@ data class ModelManagerUiState(
   val cloudChatTtsBase64Audio: String = "",
   val cloudChatTtsMimeType: String = "",
   val isSendingCloudChat: Boolean = false,
+
+  /** Device AI protocol state. */
+  val deviceAiModelRef: String = VertuRuntimeConfig.deviceAiRequiredModelRef,
+  val deviceAiModelRevision: String = VertuRuntimeConfig.deviceAiRequiredModelRevision,
+  val deviceAiModelFileName: String = VertuRuntimeConfig.deviceAiRequiredModelFileName,
+  val deviceAiExpectedSha256: String = VertuRuntimeConfig.deviceAiRequiredModelSha256,
+  val deviceAiState: FlowExecutionState = FlowExecutionState.IDLE,
+  val deviceAiStateMessage: String = "",
+  val deviceAiCorrelationId: String = "",
+  val deviceAiArtifactPath: String = "",
+  val deviceAiArtifactSha256: String = "",
+  val deviceAiArtifactSizeBytes: Long = 0L,
+  val isRunningDeviceAiProtocol: Boolean = false,
+
+  /** Conversation-first operator timeline shared by cloud and device actions. */
+  val operatorTimeline: List<OperatorTimelineEntry> = listOf(),
+
+  /** Tracks whether an external overlay is actively owned by the operator shell. */
+  val operatorExternalOverlayState: OperatorExternalOverlayState = OperatorExternalOverlayState.NONE,
+
+  /** Persisted app language override shared with the settings surface. */
+  val appLocaleTag: String = "",
 
   /** The history of text inputs entered by the user. */
   val textInputHistory: List<String> = listOf(),
@@ -242,11 +337,15 @@ constructor(
   private val lifecycleProvider: AppLifecycleProvider,
   private val customTasks: Set<@JvmSuppressWildcards CustomTask>,
   private val cloudControlPlaneClient: CloudControlPlaneClient,
+  private val deviceAiProtocolRunner: DeviceAiProtocolRunner,
   @ApplicationContext private val context: Context,
 ) : ViewModel() {
   private val externalFilesDir: File = context.getExternalFilesDir(null) ?: context.filesDir
   protected val _uiState = MutableStateFlow(createEmptyUiState())
   val uiState = _uiState.asStateFlow()
+  private val _tokenStatusAndData =
+    MutableStateFlow(TokenStatusAndData(status = TokenStatus.NOT_STORED, data = null))
+  val tokenStatusAndData = _tokenStatusAndData.asStateFlow()
 
   private val modelLifecycleMutexes = mutableMapOf<String, Mutex>()
   private fun modelMutex(modelName: String): Mutex =
@@ -254,6 +353,10 @@ constructor(
 
   val authService = AuthorizationService(context)
   var curAccessToken: String = ""
+
+  init {
+    refreshTokenStatus()
+  }
 
   private fun stringResource(resourceId: Int): String = context.getString(resourceId)
 
@@ -267,6 +370,24 @@ constructor(
 
   fun getTaskById(id: String): Task? {
     return uiState.value.tasks.find { it.id == id }
+  }
+
+  fun selectDefaultModelForTask(taskId: String) {
+    val task = getTaskById(id = taskId) ?: return
+    val downloadedModel =
+      task.models.firstOrNull { model ->
+        uiState.value.modelDownloadStatus[model.name]?.status == ModelDownloadStatusType.SUCCEEDED
+      }
+    val selected = downloadedModel ?: task.models.firstOrNull() ?: return
+    _uiState.update { it.copy(selectedModel = selected) }
+  }
+
+  /** Returns the preferred model for a task, preferring fully downloaded models first. */
+  fun getPreferredModelForTask(taskId: String): Model? {
+    val task = getTaskById(id = taskId) ?: return null
+    return task.models.firstOrNull { model ->
+      uiState.value.modelDownloadStatus[model.name]?.status == ModelDownloadStatusType.SUCCEEDED
+    } ?: task.models.firstOrNull()
   }
 
   fun getTasksByIds(ids: Set<String>): List<Task> {
@@ -341,6 +462,118 @@ constructor(
         cloudChatReply = "",
       )
     }
+  }
+
+  fun ensureCloudProvidersLoaded() {
+    val state = uiState.value
+    if (state.isLoadingProviderRegistry || state.providerOptions.isNotEmpty()) {
+      return
+    }
+    loadCloudProviders()
+  }
+
+  fun clearOperatorTimeline() {
+    _uiState.update { it.copy(operatorTimeline = listOf()) }
+  }
+
+  /** Updates the active external overlay owned by the operator shell. */
+  fun setOperatorExternalOverlayState(state: OperatorExternalOverlayState) {
+    _uiState.update { it.copy(operatorExternalOverlayState = state) }
+  }
+
+  /** Clears any external overlay tracked by the operator shell. */
+  fun clearOperatorExternalOverlayState() {
+    _uiState.update { it.copy(operatorExternalOverlayState = OperatorExternalOverlayState.NONE) }
+  }
+
+  /** Builds the shared runtime summary used across operator surfaces. */
+  fun buildOperatorRuntimeSummary(): OperatorRuntimeSummary {
+    val localAutomationModel = getPreferredModelForTask(BuiltInTaskId.LLM_MOBILE_ACTIONS)
+    val hasProviders = uiState.value.providerOptions.isNotEmpty()
+    return OperatorRuntimeSummary(
+      activeProvider = uiState.value.selectedProvider,
+      activeCloudModel = uiState.value.selectedCloudModel,
+      activeLocalModel = localAutomationModel?.displayName?.ifBlank { localAutomationModel.name }.orEmpty(),
+      runtimeReady = hasProviders || localAutomationModel != null,
+      providerState = uiState.value.providerRegistryState,
+      modelState = uiState.value.cloudModelListState,
+      pullState = uiState.value.cloudPullState,
+      capabilities =
+        listOf(
+          OperatorRuntimeCapability(
+            key = "chat",
+            label = stringResource(R.string.operator_capability_chat),
+            available = true,
+          ),
+          OperatorRuntimeCapability(
+            key = "automation",
+            label = stringResource(R.string.operator_capability_automation),
+            available = localAutomationModel?.llmSupportMobileActions == true,
+          ),
+          OperatorRuntimeCapability(
+            key = "voice_in",
+            label = stringResource(R.string.operator_capability_voice_input),
+            available = true,
+          ),
+          OperatorRuntimeCapability(
+            key = "voice_out",
+            label = stringResource(R.string.operator_capability_voice_output),
+            available = true,
+          ),
+        ),
+    )
+  }
+
+  /** Builds the required-model readiness summary used across operator surfaces. */
+  fun buildRequiredModelReadiness(): RequiredModelReadiness {
+    val artifactFile = uiState.value.deviceAiArtifactPath.takeIf(String::isNotBlank)?.let(::File)
+    val artifactExists = artifactFile?.exists() == true
+    if (artifactExists && uiState.value.deviceAiState == FlowExecutionState.SUCCESS) {
+      return RequiredModelReadiness(
+        state = RequiredModelReadinessState.READY,
+        title = stringResource(R.string.operator_required_model_ready_title),
+        detail = uiState.value.deviceAiStateMessage.ifBlank {
+          stringResource(R.string.operator_required_model_ready_detail)
+        },
+        actionLabel = stringResource(R.string.operator_required_model_verify_action),
+      )
+    }
+    if (uiState.value.isRunningDeviceAiProtocol) {
+      val state =
+        if (artifactExists) {
+          RequiredModelReadinessState.VERIFYING
+        } else {
+          RequiredModelReadinessState.DOWNLOADING
+        }
+      return RequiredModelReadiness(
+        state = state,
+        title = stringResource(R.string.operator_required_model_in_progress_title),
+        detail = uiState.value.deviceAiStateMessage.ifBlank {
+          stringResource(R.string.operator_required_model_in_progress_detail)
+        },
+        actionLabel = stringResource(R.string.operator_required_model_running_action),
+      )
+    }
+    if (
+      uiState.value.deviceAiState == FlowExecutionState.ERROR_RETRYABLE ||
+        uiState.value.deviceAiState == FlowExecutionState.ERROR_NON_RETRYABLE ||
+        uiState.value.deviceAiState == FlowExecutionState.UNAUTHORIZED
+    ) {
+      return RequiredModelReadiness(
+        state = RequiredModelReadinessState.FAILED,
+        title = stringResource(R.string.operator_required_model_failed_title),
+        detail = uiState.value.deviceAiStateMessage.ifBlank {
+          stringResource(R.string.operator_required_model_failed_detail)
+        },
+        actionLabel = stringResource(R.string.operator_required_model_retry_action),
+      )
+    }
+    return RequiredModelReadiness(
+      state = RequiredModelReadinessState.NOT_INSTALLED,
+      title = stringResource(R.string.operator_required_model_missing_title),
+      detail = stringResource(R.string.operator_required_model_missing_detail),
+      actionLabel = stringResource(R.string.operator_required_model_download_action),
+    )
   }
 
   fun setSelectedProvider(provider: String) {
@@ -443,6 +676,118 @@ constructor(
     _uiState.update { it.copy(cloudChatTtsVoice = voice) }
   }
 
+  fun runDeviceAiProtocol() {
+    launchDeviceAiProtocol(
+      launchRequest =
+        DeviceAiProtocolLaunchRequest(
+          modelRef = uiState.value.deviceAiModelRef,
+          revision = uiState.value.deviceAiModelRevision,
+          fileName = uiState.value.deviceAiModelFileName,
+          expectedSha256 = uiState.value.deviceAiExpectedSha256,
+          trigger = DeviceAiProtocolTrigger.UI,
+        )
+    )
+  }
+
+  fun runDeviceAiProtocolFromAutomationLaunch(launchRequest: DeviceAiProtocolLaunchRequest) {
+    launchDeviceAiProtocol(launchRequest = launchRequest)
+  }
+
+  suspend fun awaitModelAllowlistLoaded() {
+    if (!uiState.value.loadingModelAllowlist) {
+      return
+    }
+    uiState.first { !it.loadingModelAllowlist }
+  }
+
+  private fun launchDeviceAiProtocol(launchRequest: DeviceAiProtocolLaunchRequest) {
+    val currentState = uiState.value
+    if (currentState.isRunningDeviceAiProtocol) {
+      return
+    }
+
+    val request =
+      buildDeviceAiProtocolRunRequest(
+        launchRequest = launchRequest,
+        currentState = currentState,
+      )
+    appendOperatorTimelineEntry(
+      role = OperatorTimelineRole.RUN,
+      title = stringResource(R.string.operator_timeline_device_title),
+      body = stringResource(R.string.device_ai_protocol_running),
+      state = FlowExecutionState.LOADING,
+    )
+    _uiState.update {
+      it.copy(
+        deviceAiModelRef = request.modelRef,
+        deviceAiModelRevision = request.revision,
+        deviceAiModelFileName = request.fileName,
+        deviceAiExpectedSha256 = request.expectedSha256,
+        deviceAiState = FlowExecutionState.LOADING,
+        deviceAiStateMessage = stringResource(R.string.device_ai_protocol_running),
+        deviceAiCorrelationId = request.correlationId,
+        deviceAiArtifactPath = "",
+        deviceAiArtifactSha256 = "",
+        deviceAiArtifactSizeBytes = 0L,
+        isRunningDeviceAiProtocol = true,
+      )
+    }
+
+    viewModelScope.launch(Dispatchers.IO) {
+      awaitModelAllowlistLoaded()
+      StructuredLog.d(
+        TAG,
+        "device_ai_protocol_started",
+        "correlationId" to request.correlationId,
+        "modelRef" to request.modelRef,
+        "fileName" to request.fileName,
+        "trigger" to request.trigger.name.lowercase(),
+      )
+      val result = deviceAiProtocolRunner.run(request = request, availableModels = getAllModels())
+      if (result.terminalState == DeviceAiProtocolTerminalState.SUCCESS) {
+        StructuredLog.d(
+          TAG,
+          "device_ai_protocol_succeeded",
+          "correlationId" to result.correlationId,
+          "artifactPath" to result.artifactPath,
+          "sizeBytes" to result.artifactSizeBytes,
+          "reportPath" to result.reportPath,
+        )
+      } else {
+        StructuredLog.w(
+          TAG,
+          "device_ai_protocol_failed",
+          "correlationId" to result.correlationId,
+          "code" to result.code,
+          "state" to result.terminalState.name,
+          "reportPath" to result.reportPath,
+        )
+      }
+      _uiState.update {
+        it.copy(
+          deviceAiState = deviceAiState(result),
+          deviceAiStateMessage = deviceAiStateMessage(result),
+          deviceAiCorrelationId = result.correlationId,
+          deviceAiArtifactPath = result.artifactPath,
+          deviceAiArtifactSha256 = result.artifactSha256,
+          deviceAiArtifactSizeBytes = result.artifactSizeBytes,
+          isRunningDeviceAiProtocol = false,
+        )
+      }
+      appendOperatorTimelineEntry(
+        role =
+          if (result.terminalState == DeviceAiProtocolTerminalState.SUCCESS) {
+            OperatorTimelineRole.ASSISTANT
+          } else {
+            OperatorTimelineRole.RUN
+          },
+        title = stringResource(R.string.operator_timeline_device_title),
+        body = deviceAiStateMessage(result),
+        state = deviceAiState(result),
+      )
+    }
+  }
+
   fun loadCloudProviders() {
     val baseUrl = resolveControlPlaneBaseUrl()
     val currentState = uiState.value.providerRegistryState
@@ -458,9 +803,7 @@ constructor(
       }
 
       try {
-        val sourceEnvelope = runCatching {
-          cloudControlPlaneClient.fetchModelSources(baseUrl = baseUrl)
-        }.getOrNull()
+        val sourceEnvelope = cloudControlPlaneClient.fetchModelSources(baseUrl = baseUrl)
         val sourceOptions =
           sourceEnvelope?.data?.sources
             ?.mapNotNull { source ->
@@ -656,6 +999,12 @@ constructor(
       timeoutMs = timeoutMs,
       correlationId = null,
     )
+    appendOperatorTimelineEntry(
+      role = OperatorTimelineRole.RUN,
+      title = stringResource(R.string.operator_timeline_runtime_title),
+      body = stringResource(R.string.operator_timeline_pull_started, requestModelRef, provider),
+      state = FlowExecutionState.LOADING,
+    )
 
     viewModelScope.launch(Dispatchers.IO) {
       _uiState.update {
@@ -769,6 +1118,17 @@ constructor(
       return
     }
 
+    if (hasSpeechInput) {
+      _uiState.update {
+        it.copy(
+          cloudChatState = FlowExecutionState.ERROR_NON_RETRYABLE,
+          cloudChatStateMessage = stringResource(R.string.cloud_chat_speech_not_supported),
+          isSendingCloudChat = false,
+        )
+      }
+      return
+    }
+
     val provider = state.selectedProvider.trim()
     if (provider.isBlank()) {
       _uiState.update {
@@ -793,22 +1153,14 @@ constructor(
       return
     }
 
-    val speechInput = if (hasSpeechInput) {
-      CloudChatAudioPayload(mimeType = speechInputMimeType, data = speechInputData)
-    } else {
-      null
+    if (message.isNotBlank()) {
+      appendOperatorTimelineEntry(
+        role = OperatorTimelineRole.USER,
+        title = stringResource(R.string.operator_timeline_user_title),
+        body = message,
+        state = FlowExecutionState.SUCCESS,
+      )
     }
-    val request = CloudChatRequest(
-      provider = provider,
-      model = model,
-      message = message.ifBlank { null },
-      speechInput = speechInput,
-      requestTts = state.cloudChatRequestTts,
-      ttsOutputMimeType = state.cloudChatTtsOutputMimeType.trim().ifBlank { null },
-      ttsVoice = state.cloudChatTtsVoice.trim().ifBlank { null },
-      apiKey = state.providerApiKey.ifBlank { null },
-      baseUrl = state.providerBaseUrl.ifBlank { null },
-    )
 
     viewModelScope.launch(Dispatchers.IO) {
       _uiState.update {
@@ -819,11 +1171,30 @@ constructor(
         )
       }
       try {
-        val envelope = cloudControlPlaneClient.sendChat(
-          baseUrl = resolveControlPlaneBaseUrl(),
-          request = request,
+        val workflowRequest = AiWorkflowRequest(
+          mode = "chat",
+          provider = provider,
+          model = model,
+          message = message,
+          apiKey = state.providerApiKey.ifBlank { null },
+          baseUrl = state.providerBaseUrl.ifBlank { null },
+          correlationId = java.util.UUID.randomUUID().toString(),
+          conversationId = state.cloudConversationId.ifBlank { null },
         )
-        applyCloudChatEnvelope(envelope)
+        var envelope = cloudControlPlaneClient.startAiWorkflowJob(
+          baseUrl = resolveControlPlaneBaseUrl(),
+          request = workflowRequest,
+        )
+        val baseUrl = resolveControlPlaneBaseUrl()
+        val pollIntervalMs = 2000L
+        val maxPolls = 120
+        var pollCount = 0
+        while (!isAiWorkflowJobTerminal(envelope) && pollCount < maxPolls) {
+          kotlinx.coroutines.delay(pollIntervalMs)
+          envelope = cloudControlPlaneClient.getAiWorkflowJobEnvelope(baseUrl, envelope.jobId)
+          pollCount++
+        }
+        applyAiWorkflowJobEnvelope(envelope)
       } catch (error: Exception) {
         Log.w(TAG, "Cloud chat request failed", error)
         _uiState.update {
@@ -836,6 +1207,38 @@ constructor(
         }
       }
     }
+  }
+
+  private fun isAiWorkflowJobTerminal(envelope: AiWorkflowJobEnvelope): Boolean {
+    val status = envelope.data?.status ?: return true
+    return status == "succeeded" || status == "failed" || status == "cancelled"
+  }
+
+  private fun applyAiWorkflowJobEnvelope(envelope: AiWorkflowJobEnvelope) {
+    val result = envelope.data?.result
+    val reply = result?.reply ?: envelope.error?.reason ?: envelope.mismatches.joinToString(" ")
+    val state = when (envelope.state) {
+      "success" -> FlowExecutionState.SUCCESS
+      "error-retryable" -> FlowExecutionState.ERROR_RETRYABLE
+      "error-non-retryable" -> FlowExecutionState.ERROR_NON_RETRYABLE
+      "unauthorized" -> FlowExecutionState.UNAUTHORIZED
+      else -> if (envelope.data?.status == "succeeded") FlowExecutionState.SUCCESS else FlowExecutionState.ERROR_NON_RETRYABLE
+    }
+    _uiState.update {
+      it.copy(
+        isSendingCloudChat = false,
+        cloudChatState = state,
+        cloudChatStateMessage = reply,
+        cloudChatReply = result?.reply.orEmpty(),
+        cloudConversationId = result?.conversationId?.trim()?.ifBlank { null } ?: it.cloudConversationId,
+      )
+    }
+    appendOperatorTimelineEntry(
+      role = if (state == FlowExecutionState.SUCCESS) OperatorTimelineRole.ASSISTANT else OperatorTimelineRole.RUN,
+      title = stringResource(R.string.operator_timeline_assistant_title),
+      body = reply,
+      state = state,
+    )
   }
 
   private fun applyCloudPullEnvelope(envelope: CloudModelPullEnvelope) {
@@ -861,28 +1264,51 @@ constructor(
         cloudPullMessage = message,
       )
     }
-  }
-
-  private fun applyCloudChatEnvelope(envelope: CloudChatEnvelope) {
-    val message =
-      if (envelope.mismatches.isNotEmpty()) {
-        envelope.mismatches.joinToString(" ")
-      } else if (envelope.data == null) {
-        stringResource(R.string.cloud_chat_no_response)
-      } else {
-        envelope.data.reply
-      }
-    _uiState.update {
-      it.copy(
-        isSendingCloudChat = false,
-        cloudChatState = envelope.state,
-        cloudChatStateMessage = message,
-        cloudChatReply = envelope.data?.reply.orEmpty(),
-        cloudChatSpeechTranscript = envelope.data?.speech?.transcript.orEmpty(),
-        cloudChatTtsBase64Audio = envelope.data?.tts?.data.orEmpty(),
-        cloudChatTtsMimeType = envelope.data?.tts?.mimeType.orEmpty(),
+    if (isTerminalCloudState(envelope.state)) {
+      appendOperatorTimelineEntry(
+        role =
+          if (envelope.state == FlowExecutionState.SUCCESS) {
+            OperatorTimelineRole.ASSISTANT
+          } else {
+            OperatorTimelineRole.RUN
+          },
+        title = stringResource(R.string.operator_timeline_runtime_title),
+        body = message,
+        state = envelope.state,
       )
     }
+  }
+
+  private fun appendOperatorTimelineEntry(
+    role: OperatorTimelineRole,
+    title: String,
+    body: String,
+    state: FlowExecutionState,
+  ) {
+    if (body.isBlank()) {
+      return
+    }
+    val entry =
+      OperatorTimelineEntry(
+        id = "operator-${System.currentTimeMillis()}-${uiState.value.operatorTimeline.size}",
+        role = role,
+        title = title,
+        body = body,
+        state = state,
+      )
+    _uiState.update {
+      it.copy(operatorTimeline = (it.operatorTimeline + entry).takeLast(60))
+    }
+  }
+
+  /** Adds a conversation event to the shared operator timeline. */
+  fun addOperatorTimelineEntry(
+    role: OperatorTimelineRole,
+    title: String,
+    body: String,
+    state: FlowExecutionState,
+  ) {
+    appendOperatorTimelineEntry(role = role, title = title, body = body, state = state)
   }
 
   private fun isTerminalCloudState(state: FlowExecutionState): Boolean {
@@ -903,6 +1329,68 @@ constructor(
     return timeout
       ?.takeIf { it in 1..Int.MAX_VALUE.toLong() }
       ?.toInt()
+  }
+
+  private fun deviceAiState(result: DeviceAiProtocolRunResult): FlowExecutionState {
+    return when (result.terminalState) {
+      DeviceAiProtocolTerminalState.SUCCESS -> FlowExecutionState.SUCCESS
+      DeviceAiProtocolTerminalState.ERROR_RETRYABLE -> FlowExecutionState.ERROR_RETRYABLE
+      DeviceAiProtocolTerminalState.ERROR_NON_RETRYABLE -> FlowExecutionState.ERROR_NON_RETRYABLE
+      DeviceAiProtocolTerminalState.UNAUTHORIZED -> FlowExecutionState.UNAUTHORIZED
+    }
+  }
+
+  private fun deviceAiStateMessage(result: DeviceAiProtocolRunResult): String {
+    return when (result.code) {
+      "MODEL_REF_REQUIRED" -> stringResource(R.string.device_ai_model_ref_required)
+      "MODEL_FILE_REQUIRED" -> stringResource(R.string.device_ai_model_file_required)
+      "MODEL_NOT_ALLOWLISTED" -> stringResource(R.string.device_ai_model_not_allowlisted)
+      "CAPABILITIES_MISSING" -> stringResource(R.string.device_ai_capabilities_missing)
+      else ->
+        when (result.terminalState) {
+          DeviceAiProtocolTerminalState.SUCCESS -> stringResource(R.string.device_ai_protocol_success)
+          DeviceAiProtocolTerminalState.ERROR_RETRYABLE -> stringResource(R.string.device_ai_protocol_failed_retryable)
+          DeviceAiProtocolTerminalState.ERROR_NON_RETRYABLE,
+          DeviceAiProtocolTerminalState.UNAUTHORIZED -> stringResource(R.string.device_ai_protocol_failed)
+        }
+    }
+  }
+
+  private fun buildDeviceAiProtocolRunRequest(
+    launchRequest: DeviceAiProtocolLaunchRequest,
+    currentState: ModelManagerUiState,
+  ): DeviceAiProtocolRunRequest {
+    return DeviceAiProtocolRunRequest(
+      correlationId =
+        launchRequest.correlationId?.trim().orEmpty().ifBlank {
+          "android-device-ai-${System.currentTimeMillis()}"
+        },
+      modelRef =
+        launchRequest.modelRef?.trim().orEmpty().ifBlank {
+          currentState.deviceAiModelRef.trim().ifBlank { VertuRuntimeConfig.deviceAiRequiredModelRef }
+        },
+      revision =
+        launchRequest.revision?.trim().orEmpty().ifBlank {
+          currentState.deviceAiModelRevision.trim().ifBlank {
+            VertuRuntimeConfig.deviceAiRequiredModelRevision
+          }
+        },
+      fileName =
+        launchRequest.fileName?.trim().orEmpty().ifBlank {
+          currentState.deviceAiModelFileName.trim().ifBlank {
+            VertuRuntimeConfig.deviceAiRequiredModelFileName
+          }
+        },
+      expectedSha256 =
+        launchRequest.expectedSha256?.trim().orEmpty().ifBlank {
+          currentState.deviceAiExpectedSha256.trim().ifBlank {
+            VertuRuntimeConfig.deviceAiRequiredModelSha256
+          }
+        },
+      token = VertuRuntimeConfig.deviceAiHfToken.ifBlank { null },
+      trigger = launchRequest.trigger,
+      timeoutMs = VertuRuntimeConfig.deviceAiProtocolTimeoutMs.toLong(),
+    )
   }
 
   private fun resolveModelSourceSelection(
@@ -1024,8 +1512,8 @@ constructor(
       }
       curModelDownloadStatus.remove(model.name)
 
-      // Update data store.
-      runBlocking {
+      // Update data store asynchronously.
+      viewModelScope.launch(Dispatchers.IO) {
         val importedModels = dataStoreRepository.readImportedModels().toMutableList()
         val importedModelIndex = importedModels.indexOfFirst { it.fileName == model.name }
         if (importedModelIndex >= 0) {
@@ -1217,11 +1705,17 @@ constructor(
   }
 
   fun readThemeOverride(): Theme {
-    return runBlocking { dataStoreRepository.readTheme() }
+    return ThemeSettings.themeOverride.value
   }
 
   fun saveThemeOverride(theme: Theme) {
     viewModelScope.launch { dataStoreRepository.saveTheme(theme = theme) }
+  }
+
+  fun saveAppLocale(appLocaleTag: String) {
+    val normalized = normalizeAppLocaleTag(appLocaleTag)
+    _uiState.update { it.copy(appLocaleTag = normalized) }
+    viewModelScope.launch { dataStoreRepository.saveAppLocale(localeTag = normalized) }
   }
 
   fun getModelUrlResponse(model: Model, accessToken: String? = null): Int {
@@ -1236,7 +1730,7 @@ constructor(
       // Report the result.
       return connection.responseCode
     } catch (e: Exception) {
-      Log.e(TAG, "$e")
+      Log.e(TAG, "Failed to get model URL response", e)
       return -1
     }
   }
@@ -1309,7 +1803,7 @@ constructor(
     }
 
     // Add to data store.
-    runBlocking {
+    viewModelScope.launch(Dispatchers.IO) {
       val importedModels = dataStoreRepository.readImportedModels().toMutableList()
       val importedModelIndex = importedModels.indexOfFirst { info.fileName == it.fileName }
       if (importedModelIndex >= 0) {
@@ -1322,35 +1816,52 @@ constructor(
   }
 
   fun getTokenStatusAndData(): TokenStatusAndData {
-    // Try to load token data from DataStore.
-    var tokenStatus = TokenStatus.NOT_STORED
-    Log.d(TAG, "Reading token data from data store...")
-    val tokenData = runBlocking { dataStoreRepository.readAccessTokenData() }
+    return _tokenStatusAndData.value
+  }
 
-    // Token exists.
-    if (tokenData != null && tokenData.accessToken.isNotEmpty()) {
-      Log.d(TAG, "Token exists and loaded.")
+  suspend fun getLatestTokenStatusAndData(): TokenStatusAndData {
+    return loadTokenStatusAndData()
+  }
 
-      // Check expiration (with 5-minute buffer).
-      val curTs = System.currentTimeMillis()
-      val expirationTs = tokenData.expiresAtMs - 5 * 60
-      Log.d(
-        TAG,
-        "Checking whether token has expired or not. Current ts: $curTs, expires at: $expirationTs",
-      )
-      if (curTs >= expirationTs) {
-        Log.d(TAG, "Token expired!")
-        tokenStatus = TokenStatus.EXPIRED
+  fun refreshTokenStatus() {
+    viewModelScope.launch(Dispatchers.IO) { loadTokenStatusAndData() }
+  }
+
+  private suspend fun loadTokenStatusAndData(): TokenStatusAndData {
+    return withContext(Dispatchers.IO) {
+      var tokenStatus = TokenStatus.NOT_STORED
+      StructuredLog.d(TAG, "token_status_read_started")
+      val tokenData = dataStoreRepository.readAccessTokenData()
+
+      // Token exists.
+      if (tokenData != null && tokenData.accessToken.isNotEmpty()) {
+        StructuredLog.d(TAG, "token_loaded")
+
+        // Check expiration (with 5-minute buffer).
+        val curTs = System.currentTimeMillis()
+        val expirationTs = tokenData.expiresAtMs - 5 * 60
+        StructuredLog.d(
+          TAG,
+          "token_expiration_check",
+          "currentTs" to curTs,
+          "expirationTs" to expirationTs,
+        )
+        if (curTs >= expirationTs) {
+          StructuredLog.w(TAG, "token_expired")
+          tokenStatus = TokenStatus.EXPIRED
+        } else {
+          StructuredLog.d(TAG, "token_valid")
+          tokenStatus = TokenStatus.NOT_EXPIRED
+          curAccessToken = tokenData.accessToken
+        }
       } else {
-        Log.d(TAG, "Token not expired.")
-        tokenStatus = TokenStatus.NOT_EXPIRED
-        curAccessToken = tokenData.accessToken
+        StructuredLog.d(TAG, "token_missing")
       }
-    } else {
-      Log.d(TAG, "Token doesn't exists.")
-    }
 
-    return TokenStatusAndData(status = tokenStatus, data = tokenData)
+      val resolved = TokenStatusAndData(status = tokenStatus, data = tokenData)
+      _tokenStatusAndData.value = resolved
+      resolved
+    }
   }
 
   fun getAuthorizationRequest(): AuthorizationRequest {
@@ -1440,27 +1951,32 @@ constructor(
   }
 
   fun saveAccessToken(accessToken: String, refreshToken: String, expiresAt: Long) {
-    viewModelScope.launch {
+    viewModelScope.launch(Dispatchers.IO) {
       dataStoreRepository.saveAccessTokenData(
         accessToken = accessToken,
         refreshToken = refreshToken,
         expiresAt = expiresAt,
       )
+      loadTokenStatusAndData()
     }
   }
 
   fun clearAccessToken() {
-    viewModelScope.launch { dataStoreRepository.clearAccessTokenData() }
+    viewModelScope.launch(Dispatchers.IO) {
+      dataStoreRepository.clearAccessTokenData()
+      loadTokenStatusAndData()
+    }
   }
 
   private fun processPendingDownloads() {
     // Cancel all pending downloads for the retrieved models.
     downloadRepository.cancelAll {
       Log.d(TAG, "All workers are cancelled.")
+      StructuredLog.d(TAG, "pending_downloads_cancelled")
 
       viewModelScope.launch(Dispatchers.Main) {
         val checkedModelNames = mutableSetOf<String>()
-        val tokenStatusAndData = getTokenStatusAndData()
+        val tokenStatusAndData = getLatestTokenStatusAndData()
         for (task in uiState.value.tasks) {
           for (model in task.models) {
             if (checkedModelNames.contains(model.name)) {
@@ -1476,7 +1992,7 @@ constructor(
               ) {
                 model.accessToken = tokenStatusAndData.data.accessToken
               }
-              Log.d(TAG, "Sending a new download request for '${model.name}'")
+              StructuredLog.d(TAG, "pending_download_resumed", "model" to model.name)
               downloadRepository.downloadModel(
                 task = task,
                 model = model,
@@ -1594,14 +2110,14 @@ constructor(
         processTasks()
 
         // Update UI state.
-        _uiState.update {
+        val refreshedState =
           createUiState()
             .copy(
               loadingModelAllowlist = false,
               tasks = curTasks,
               tasksByCategory = groupTasksByCategory(),
             )
-        }
+        _uiState.update { refreshedState }
 
         // Process pending downloads.
         processPendingDownloads()
@@ -1620,14 +2136,16 @@ constructor(
   fun clearLoadModelAllowlistError() {
     val curTasks = customTasks.map { it.task }
     processTasks()
-    _uiState.update {
-      createUiState()
-        .copy(
-          loadingModelAllowlist = false,
-          tasks = curTasks,
-          loadingModelAllowlistError = "",
-          tasksByCategory = groupTasksByCategory(),
-        )
+    viewModelScope.launch(Dispatchers.IO) {
+      val refreshedState =
+        createUiState()
+          .copy(
+            loadingModelAllowlist = false,
+            tasks = curTasks,
+            loadingModelAllowlistError = "",
+            tasksByCategory = groupTasksByCategory(),
+          )
+      _uiState.update { refreshedState }
     }
   }
 
@@ -1694,10 +2212,11 @@ constructor(
       tasksByCategory = mapOf(),
       modelDownloadStatus = mapOf(),
       modelInitializationStatus = mapOf(),
+      deviceAiStateMessage = stringResource(R.string.device_ai_protocol_idle),
     )
   }
 
-  private fun createUiState(): ModelManagerUiState {
+  private suspend fun createUiState(): ModelManagerUiState {
     val modelDownloadStatus: MutableMap<String, ModelDownloadStatus> = mutableMapOf()
     val modelInstances: MutableMap<String, ModelInitializationStatus> = mutableMapOf()
     val tasks: MutableMap<String, Task> = mutableMapOf()
@@ -1716,8 +2235,8 @@ constructor(
       }
     }
 
-        // Load imported models.
-    for (importedModel in runBlocking { dataStoreRepository.readImportedModels() }) {
+    // Load imported models.
+    for (importedModel in dataStoreRepository.readImportedModels()) {
       Log.d(TAG, "stored imported model: $importedModel")
 
       // Create model.
@@ -1752,7 +2271,8 @@ constructor(
         )
     }
 
-    val textInputHistory = runBlocking { dataStoreRepository.readTextInputHistory() }
+    val textInputHistory = dataStoreRepository.readTextInputHistory()
+    val appLocaleTag = normalizeAppLocaleTag(dataStoreRepository.readAppLocale())
     Log.d(TAG, "text input history: $textInputHistory")
 
     Log.d(TAG, "model download status: $modelDownloadStatus")
@@ -1761,6 +2281,7 @@ constructor(
       tasksByCategory = mapOf(),
       modelDownloadStatus = modelDownloadStatus,
       modelInitializationStatus = modelInstances,
+      appLocaleTag = appLocaleTag,
       textInputHistory = textInputHistory,
     )
   }
@@ -1993,6 +2514,7 @@ constructor(
 
     return downloadedFileExists || unzippedDirectoryExists
   }
+
 }
 
 private fun getAllowlistUrl(): String {

@@ -28,6 +28,13 @@ import kotlinx.coroutines.ensureActive
 
 private typealias DeviceProvider = () -> UiDevice
 
+private const val MIN_SCROLL_STEPS = 1
+private const val MAX_SCROLL_STEPS = 50
+private const val SCROLL_DEFAULT_DISTANCE_FRACTION = 0.65f
+private const val MIN_SWIPE_DISTANCE_FRACTION = 0.2f
+private const val MAX_SWIPE_DISTANCE_FRACTION = 0.95f
+private const val SWIPE_ANIMATION_STEPS = 24
+
 /** Android UIAutomator implementation of the shared [DriverAdapter]. */
 class AndroidUiAutomatorDriver
 private constructor(
@@ -276,7 +283,10 @@ private constructor(
       }
 
       is FlowCommand.Scroll -> {
-        performSwipe(device = device, direction = step.direction, distanceFraction = 0.65f)
+        val scrollSteps = step.steps?.coerceIn(MIN_SCROLL_STEPS, MAX_SCROLL_STEPS) ?: MIN_SCROLL_STEPS
+        repeat(scrollSteps) {
+          performSwipe(device = device, direction = step.direction, distanceFraction = SCROLL_DEFAULT_DISTANCE_FRACTION)
+        }
         return null
       }
 
@@ -284,7 +294,7 @@ private constructor(
         performSwipe(
           device = device,
           direction = step.direction,
-          distanceFraction = step.distanceFraction.coerceIn(0.2f, 0.95f),
+          distanceFraction = step.distanceFraction.coerceIn(MIN_SWIPE_DISTANCE_FRACTION, MAX_SWIPE_DISTANCE_FRACTION),
         )
         return null
       }
@@ -341,7 +351,7 @@ private constructor(
         Direction.RIGHT -> arrayOf(centerX - xDelta, centerY, centerX + xDelta, centerY)
       }
 
-    device.swipe(startX, startY, endX, endY, 24)
+    device.swipe(startX, startY, endX, endY, SWIPE_ANIMATION_STEPS)
   }
 
   private fun captureArtifacts(device: UiDevice, correlationId: String, stepIndex: Int): DriverArtifacts {
@@ -435,5 +445,5 @@ object SelectorPriorityResolver {
 }
 
 private fun String.shellEscape(): String {
-  return replace(" ", "%s")
+  return "'" + replace("'", "'\\''") + "'"
 }

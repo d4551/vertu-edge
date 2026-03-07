@@ -39,7 +39,7 @@ flowchart LR
   XCTEST -.-> DRIVER
 ```
 
-The generated `VertuEdgeHost` app target is the runnable shell used by `scripts/run_ios_build.sh`.
+The generated `VertuEdgeHost` app target is the runnable shell used by `vertu-flow build ios`.
 The production app bundle links `VertuEdgeDriver` only. The XCUITest-backed automation
 implementation lives in `Sources/VertuEdgeDriverXCTest/IosXcTestDriver.swift` so XCTest
 does not leak into generated iOS application artifacts.

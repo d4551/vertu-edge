@@ -139,108 +139,60 @@ val LocalCustomColors = staticCompositionLocalOf { CustomColors() }
 
 val lightCustomColors =
   CustomColors(
-    appTitleGradientColors = listOf(Color(0xFF85B1F8), Color(0xFF3174F1)),
-    tabHeaderBgColor = Color(0xFF3174F1),
+    appTitleGradientColors = listOf(primaryDark, primaryLight),
+    tabHeaderBgColor = primaryLight,
     taskCardBgColor = surfaceContainerLowestLight,
-    taskBgColors =
-      listOf(
-        // red
-        Color(0xFFFFF5F5),
-        // green
-        Color(0xFFF4FBF6),
-        // blue
-        Color(0xFFF1F6FE),
-        // yellow
-        Color(0xFFFFFBF0),
-      ),
+    taskBgColors = listOf(taskBgLight1, taskBgLight2, taskBgLight3, taskBgLight4),
     taskBgGradientColors =
       listOf(
-        // red
-        listOf(Color(0xFFE25F57), Color(0xFFDB372D)),
-        // green
-        listOf(Color(0xFF41A15F), Color(0xFF128937)),
-        // blue
-        listOf(Color(0xFF669DF6), Color(0xFF3174F1)),
-        // yellow
-        listOf(Color(0xFFFDD45D), Color(0xFFCAA12A)),
+        listOf(primaryDark, primaryLight),
+        listOf(secondaryLight, goldTintMedium),
+        listOf(secondaryLight, goldTintDark),
+        listOf(goldTintDarker, goldTintDarkest),
       ),
-    taskIconColors =
-      listOf(
-        // red.
-        Color(0xFFDB372D),
-        // green
-        Color(0xFF128937),
-        // blue
-        Color(0xFF3174F1),
-        // yellow
-        Color(0xFFCAA12A),
-      ),
+    taskIconColors = listOf(primaryLight, goldTintMedium, goldTintDark, goldTintDarkest),
     taskIconShapeBgColor = Color.White,
-    homeBottomGradient = listOf(Color(0x00F8F9FF), Color(0xffFFEFC9)),
-    agentBubbleBgColor = Color(0xFFe9eef6),
-    userBubbleBgColor = Color(0xFF32628D),
-    linkColor = Color(0xFF32628D),
-    successColor = Color(0xff3d860b),
-    recordButtonBgColor = Color(0xFFEE675C),
-    waveFormBgColor = Color(0xFFaaaaaa),
-    modelInfoIconColor = Color(0xFFCCCCCC),
-    warningContainerColor = Color(0xfffef7e0),
-    warningTextColor = Color(0xffe37400),
-    errorContainerColor = Color(0xfffce8e6),
-    errorTextColor = Color(0xffd93025),
+    homeBottomGradient = listOf(homeGradientStartLight, homeGradientEndLight),
+    agentBubbleBgColor = agentBubbleLight,
+    userBubbleBgColor = userBubbleLight,
+    linkColor = linkLight,
+    successColor = successLight,
+    recordButtonBgColor = recordButton,
+    waveFormBgColor = waveFormLight,
+    modelInfoIconColor = modelInfoLight,
+    warningContainerColor = warningContainerLight,
+    warningTextColor = warningTextLight,
+    errorContainerColor = alertErrorContainerLight,
+    errorTextColor = errorTextLight,
   )
 
 val darkCustomColors =
   CustomColors(
-    appTitleGradientColors = listOf(Color(0xFF85B1F8), Color(0xFF3174F1)),
-    tabHeaderBgColor = Color(0xFF3174F1),
+    appTitleGradientColors = listOf(primaryDark, primaryLight),
+    tabHeaderBgColor = primaryLight,
     taskCardBgColor = surfaceContainerHighDark,
-    taskBgColors =
-      listOf(
-        // red
-        Color(0xFF181210),
-        // green
-        Color(0xFF131711),
-        // blue
-        Color(0xFF191924),
-        // yellow
-        Color(0xFF1A1813),
-      ),
+    taskBgColors = listOf(taskBgDark1, taskBgDark2, taskBgDark3, taskBgDark4),
     taskBgGradientColors =
       listOf(
-        // red
-        listOf(Color(0xFFE25F57), Color(0xFFDB372D)),
-        // green
-        listOf(Color(0xFF41A15F), Color(0xFF128937)),
-        // blue
-        listOf(Color(0xFF669DF6), Color(0xFF3174F1)),
-        // yellow
-        listOf(Color(0xFFFDD45D), Color(0xFFCAA12A)),
+        listOf(primaryDark, primaryLight),
+        listOf(secondaryDark, goldTintMedium),
+        listOf(secondaryLight, goldTintDark),
+        listOf(goldTintDarker, goldTintDarkest),
       ),
-    taskIconColors =
-      listOf(
-        // red.
-        Color(0xFFE25F57),
-        // green
-        Color(0xFF41A15F),
-        // blue
-        Color(0xFF669DF6),
-        // yellow
-        Color(0xFFCAA12A),
-      ),
-    taskIconShapeBgColor = Color(0xFF202124),
-    homeBottomGradient = listOf(Color(0x00F8F9FF), Color(0x1AF6AD01)),
-    agentBubbleBgColor = Color(0xFF1b1c1d),
-    userBubbleBgColor = Color(0xFF1f3760),
-    linkColor = Color(0xFF9DCAFC),
-    successColor = Color(0xFFA1CE83),
-    recordButtonBgColor = Color(0xFFEE675C),
-    waveFormBgColor = Color(0xFFaaaaaa),
-    modelInfoIconColor = Color(0xFFCCCCCC),
-    warningContainerColor = Color(0xff554c33),
-    warningTextColor = Color(0xfffcc934),
-    errorContainerColor = Color(0xff523a3b),
-    errorTextColor = Color(0xffee675c),
+    taskIconColors = listOf(primaryDark, secondaryDark, secondaryLight, goldTintMedium),
+    taskIconShapeBgColor = taskIconShapeDark,
+    homeBottomGradient = listOf(homeGradientStartDark, homeGradientEndDark),
+    agentBubbleBgColor = agentBubbleDark,
+    userBubbleBgColor = userBubbleDark,
+    linkColor = primaryDark,
+    successColor = successDark,
+    recordButtonBgColor = recordButton,
+    waveFormBgColor = waveFormDark,
+    modelInfoIconColor = modelInfoDark,
+    warningContainerColor = warningContainerDark,
+    warningTextColor = primaryDark,
+    errorContainerColor = alertErrorContainerDark,
+    errorTextColor = errorTextDark,
   )
 
 val MaterialTheme.customColors: CustomColors
@@ -264,8 +216,9 @@ fun StatusBarColorController(useDarkTheme: Boolean) {
   }
 }
 
+/** Vertu-branded theme composable. */
 @Composable
-fun GalleryTheme(content: @Composable () -> Unit) {
+fun VertuTheme(content: @Composable () -> Unit) {
   val themeOverride = ThemeSettings.themeOverride
   val darkTheme: Boolean =
     (isSystemInDarkTheme() || themeOverride.value == Theme.THEME_DARK) &&
@@ -295,3 +248,4 @@ fun GalleryTheme(content: @Composable () -> Unit) {
     }
   }
 }
+

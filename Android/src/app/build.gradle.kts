@@ -95,6 +95,53 @@ val vertuControlPlaneModelStateIdPrefix = resolveConfig(
   name = "VERTU_CONTROL_PLANE_MODEL_STATE_ID_PREFIX",
   defaultValue = "model-state",
 )
+val vertuRequiredModelRef = resolveConfig(
+  name = "VERTU_REQUIRED_MODEL_REF",
+  defaultValue = "huggingface.co/mradermacher/AutoGLM-Phone-9B-Multilingual-GGUF",
+)
+val vertuRequiredModelRevision = resolveConfig(
+  name = "VERTU_REQUIRED_MODEL_REVISION",
+  defaultValue = "5b34029a6b23a90aea2e377f1f9b273d1001638c",
+)
+val vertuRequiredModelFile = resolveConfig(
+  name = "VERTU_REQUIRED_MODEL_FILE",
+  defaultValue = "AutoGLM-Phone-9B-Multilingual.Q4_K_M.gguf",
+)
+val vertuRequiredModelSha256 = resolveConfig(
+  name = "VERTU_REQUIRED_MODEL_SHA256",
+  defaultValue = "12b91074f0dfffee7e2732501ba8c5eecf3b1187dd08a91d71fb1e23437a073f",
+)
+val vertuDeviceAiModelDirectory = resolveConfig(
+  name = "VERTU_DEVICE_AI_MODEL_DIRECTORY",
+  defaultValue = "vertu-device-ai/models",
+)
+val vertuDeviceAiProtocolTimeoutMs = resolveConfig(
+  name = "VERTU_DEVICE_AI_PROTOCOL_TIMEOUT_MS",
+  defaultValue = "900000",
+)
+val vertuDeviceAiReportMaxAgeMinutes = resolveConfig(
+  name = "VERTU_DEVICE_AI_REPORT_MAX_AGE_MINUTES",
+  defaultValue = "240",
+)
+val vertuDeviceAiDownloadMaxAttempts = resolveConfig(
+  name = "VERTU_DEVICE_AI_DOWNLOAD_MAX_ATTEMPTS",
+  defaultValue = "3",
+)
+val vertuTinyGardenAssetBaseUrl = resolveConfig(
+  name = "VERTU_TINY_GARDEN_ASSET_BASE_URL",
+  defaultValue = "https://appassets.androidplatform.net",
+)
+val vertuTinyGardenAssetPath = resolveConfig(
+  name = "VERTU_TINY_GARDEN_ASSET_PATH",
+  defaultValue = "assets/tinygarden",
+)
+val vertuDeviceAiHfToken = resolveConfig(
+  name = "VERTU_DEVICE_AI_HF_TOKEN",
+  defaultValue = resolveConfig(
+    name = "HF_TOKEN",
+    defaultValue = resolveConfig(name = "HUGGINGFACE_HUB_TOKEN", defaultValue = ""),
+  ),
+)
 
 android {
   namespace = "com.google.ai.edge.gallery"
@@ -165,6 +212,57 @@ android {
       "String",
       "VERTU_CONTROL_PLANE_MODEL_STATE_ID_PREFIX",
       buildConfigString(vertuControlPlaneModelStateIdPrefix),
+    )
+    buildConfigField("String", "VERTU_REQUIRED_MODEL_REF", buildConfigString(vertuRequiredModelRef))
+    buildConfigField(
+      "String",
+      "VERTU_REQUIRED_MODEL_REVISION",
+      buildConfigString(vertuRequiredModelRevision),
+    )
+    buildConfigField(
+      "String",
+      "VERTU_REQUIRED_MODEL_FILE",
+      buildConfigString(vertuRequiredModelFile),
+    )
+    buildConfigField(
+      "String",
+      "VERTU_REQUIRED_MODEL_SHA256",
+      buildConfigString(vertuRequiredModelSha256),
+    )
+    buildConfigField(
+      "String",
+      "VERTU_DEVICE_AI_MODEL_DIRECTORY",
+      buildConfigString(vertuDeviceAiModelDirectory),
+    )
+    buildConfigField(
+      "int",
+      "VERTU_DEVICE_AI_PROTOCOL_TIMEOUT_MS",
+      vertuDeviceAiProtocolTimeoutMs,
+    )
+    buildConfigField(
+      "int",
+      "VERTU_DEVICE_AI_REPORT_MAX_AGE_MINUTES",
+      vertuDeviceAiReportMaxAgeMinutes,
+    )
+    buildConfigField(
+      "int",
+      "VERTU_DEVICE_AI_DOWNLOAD_MAX_ATTEMPTS",
+      vertuDeviceAiDownloadMaxAttempts,
+    )
+    buildConfigField(
+      "String",
+      "VERTU_TINY_GARDEN_ASSET_BASE_URL",
+      buildConfigString(vertuTinyGardenAssetBaseUrl),
+    )
+    buildConfigField(
+      "String",
+      "VERTU_TINY_GARDEN_ASSET_PATH",
+      buildConfigString(vertuTinyGardenAssetPath),
+    )
+    buildConfigField(
+      "String",
+      "VERTU_DEVICE_AI_HF_TOKEN",
+      buildConfigString(vertuDeviceAiHfToken),
     )
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
