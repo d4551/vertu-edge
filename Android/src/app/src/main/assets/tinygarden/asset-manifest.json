@@ -1,0 +1,6 @@
+{
+  "entryHtml": "index.html",
+  "scriptModule": "main.js",
+  "styleSheet": "styles.css",
+  "bundleVersion": "1.0.0"
+}

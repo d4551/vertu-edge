@@ -14,7 +14,7 @@ import {
   listCapabilityJobEvents,
   updateCapabilityJob,
 } from "./db";
-import { safeParseJson, type JsonRecord, type JsonValue } from "./config";
+import { safeParseJson, MAX_CACHED_JOB_RESULTS, type JsonRecord, type JsonValue } from "./config";
 import { RPADriver } from "./flow-engine";
 import { parseFlowTarget } from "./flow-target-parser";
 import { parseMaestroYaml } from "./yaml-parser";
@@ -28,7 +28,7 @@ interface FlowRunJobPayload extends FlowRunRequest {
 
 const activeRunControl = new Map<string, { pause: boolean; cancel: boolean }>();
 const flowRunResults = new Map<string, FlowRunResult>();
-const MAX_CACHED_RUN_RESULTS = 500;
+const MAX_CACHED_RUN_RESULTS = MAX_CACHED_JOB_RESULTS;
 
 /** Start a flow run job and return a loading envelope. */
 export function startFlowRunJob(request: FlowRunJobRequest, requestedBy?: string): FlowRunJobEnvelope {
@@ -148,7 +148,7 @@ export function cancelFlowRunJob(runId: string): FlowRunJobEnvelope {
       resource: runId,
     });
     return {
-      route: "/api/flows/runs",
+      route: FLOW_RUN_ROUTE,
       runId,
       state: "error-non-retryable",
       error,
@@ -175,6 +175,26 @@ export function cancelFlowRunJob(runId: string): FlowRunJobEnvelope {
 
 /** Pause a running flow job. */
 export function pauseFlowRunJob(runId: string): FlowRunJobEnvelope {
+  const existing = getCapabilityJob(runId);
+  if (!existing || existing.kind !== "flow_run") {
+    const error = createFlowCapabilityError({
+      commandIndex: -1,
+      command: "runId",
+      code: "FLOW_RUN_NOT_FOUND",
+      category: "validation",
+      reason: `Flow run '${runId}' was not found or is not a flow run job`,
+      retryable: false,
+      surface: "flow",
+      resource: runId,
+    });
+    return {
+      route: FLOW_RUN_ROUTE,
+      runId,
+      state: "error-non-retryable",
+      error,
+      mismatches: [error.reason],
+    };
+  }
   const control = activeRunControl.get(runId);
   if (control) {
     control.pause = true;
@@ -336,11 +356,21 @@ export function replayFlowRunStep(runId: string, commandIndex: number): FlowRunJ
 }
 
 /** List flow run log events for polling/SSE endpoints. */
-export function getFlowRunLogEvents(runId: string, afterEventId?: string | null): import("./db").CapabilityJobEventRecord[] {
-  return listCapabilityJobEvents(runId, afterEventId);
+export function getFlowRunLogEvents(runId: string, afterCursor?: string | null): import("./db").CapabilityJobEventRecord[] {
+  return listCapabilityJobEvents(runId, afterCursor);
 }
 
 async function executeFlowRunJob(runId: string, payload: FlowRunJobPayload): Promise<void> {
+  // Guard: prevent concurrent execution of the same runId.
+  if (activeRunControl.has(runId)) {
+    appendCapabilityJobEvent({
+      jobId: runId,
+      level: "warn",
+      message: "Rejected duplicate execution: run is already active",
+    });
+    return;
+  }
+
   updateCapabilityJob(runId, {
     status: "running",
     startedAt: new Date().toISOString(),

@@ -80,9 +80,12 @@ test("validateModelRefWithSource rejects unsafe values for non-huggingface sourc
 test("Build platform helpers are strict", () => {
   expect(isSupportedBuildKind("android")).toBe(true);
   expect(isSupportedBuildKind("ios")).toBe(true);
+  expect(isSupportedBuildKind("desktop")).toBe(true);
   expect(isSupportedBuildKind("web")).toBe(false);
   expect(buildJobRouteFromKind("android")).toBe("/api/apps/build");
   expect(buildJobRouteFromKind("android", "job-1")).toBe("/api/apps/build/job-1");
+  expect(buildJobRouteFromKind("desktop")).toBe("/api/apps/build");
+  expect(buildJobRouteFromKind("desktop", "job-2")).toBe("/api/apps/build/job-2");
 });
 
 test("Supported flow command registry matches parser command detection", () => {

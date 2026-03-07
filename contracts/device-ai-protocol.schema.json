@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vertu.edge/schemas/device-ai-protocol.schema.json",
+  "title": "DeviceAiProtocol",
+  "oneOf": [
+    { "$ref": "#/$defs/DeviceAiProtocolProfile" },
+    { "$ref": "#/$defs/DeviceAiProtocolRunReport" }
+  ],
+  "$defs": {
+    "DeviceAiCapability": {
+      "type": "string",
+      "enum": ["mobile_actions", "rpa_controls", "flow_commands"]
+    },
+    "DeviceAiStageStatus": {
+      "type": "string",
+      "enum": ["pass", "fail", "skip"]
+    },
+    "DeviceAiPlatform": {
+      "type": "string",
+      "enum": ["android", "ios"]
+    },
+    "DeviceAiRuntimeRequirements": {
+      "type": "object",
+      "required": ["localOllama", "cloudHuggingFace"],
+      "properties": {
+        "localOllama": { "type": "boolean" },
+        "cloudHuggingFace": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "DeviceAiPlatformRequirement": {
+      "type": "object",
+      "required": ["required"],
+      "properties": {
+        "required": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "DeviceAiPlatformRequirements": {
+      "type": "object",
+      "required": ["android", "ios"],
+      "properties": {
+        "android": { "$ref": "#/$defs/DeviceAiPlatformRequirement" },
+        "ios": { "$ref": "#/$defs/DeviceAiPlatformRequirement" }
+      },
+      "additionalProperties": false
+    },
+    "DeviceAiProtocolProfile": {
+      "type": "object",
+      "required": [
+        "profileVersion",
+        "requiredModelRef",
+        "revision",
+        "requiredModelFile",
+        "requiredModelSha256",
+        "requiredCapabilities",
+        "runtimeRequirements",
+        "platforms",
+        "protocolTimeoutMs",
+        "reportMaxAgeMinutes"
+      ],
+      "properties": {
+        "profileVersion": { "type": "string", "minLength": 1 },
+        "requiredModelRef": { "type": "string", "minLength": 1 },
+        "revision": { "type": "string", "minLength": 1 },
+        "requiredModelFile": { "type": "string", "minLength": 1 },
+        "requiredModelSha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "requiredCapabilities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DeviceAiCapability" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "runtimeRequirements": { "$ref": "#/$defs/DeviceAiRuntimeRequirements" },
+        "platforms": { "$ref": "#/$defs/DeviceAiPlatformRequirements" },
+        "protocolTimeoutMs": { "type": "integer", "minimum": 1 },
+        "reportMaxAgeMinutes": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "DeviceAiRuntimeProbe": {
+      "type": "object",
+      "required": ["required", "available", "message"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "available": { "type": "boolean" },
+        "message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "DeviceAiRuntimeProbeResult": {
+      "type": "object",
+      "required": ["localOllama", "cloudHuggingFace"],
+      "properties": {
+        "localOllama": { "$ref": "#/$defs/DeviceAiRuntimeProbe" },
+        "cloudHuggingFace": { "$ref": "#/$defs/DeviceAiRuntimeProbe" }
+      },
+      "additionalProperties": false
+    },
+    "DeviceAiStageReport": {
+      "type": "object",
+      "required": ["stage", "status", "correlationId", "startedAt", "endedAt", "message", "retryable"],
+      "properties": {
+        "stage": { "type": "string", "minLength": 1 },
+        "status": { "$ref": "#/$defs/DeviceAiStageStatus" },
+        "correlationId": { "type": "string", "minLength": 1 },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "endedAt": { "type": "string", "format": "date-time" },
+        "message": { "type": "string" },
+        "retryable": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "DeviceAiModelEvidence": {
+      "type": "object",
+      "required": ["modelRef", "revision", "fileName", "downloaded", "verified", "sha256", "sizeBytes", "capabilities"],
+      "properties": {
+        "modelRef": { "type": "string", "minLength": 1 },
+        "revision": { "type": "string", "minLength": 1 },
+        "fileName": { "type": "string", "minLength": 1 },
+        "downloaded": { "type": "boolean" },
+        "verified": { "type": "boolean" },
+        "artifactPath": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "sizeBytes": { "type": "integer", "minimum": 0 },
+        "capabilities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DeviceAiCapability" },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "DeviceAiPlatformReport": {
+      "type": "object",
+      "required": [
+        "platform",
+        "required",
+        "status",
+        "deviceReady",
+        "stagingReady",
+        "smokeReady",
+        "stages"
+      ],
+      "properties": {
+        "platform": { "$ref": "#/$defs/DeviceAiPlatform" },
+        "required": { "type": "boolean" },
+        "status": { "$ref": "#/$defs/DeviceAiStageStatus" },
+        "deviceReady": { "type": "boolean" },
+        "stagingReady": { "type": "boolean" },
+        "smokeReady": { "type": "boolean" },
+        "stages": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DeviceAiStageReport" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "DeviceAiProtocolRunReport": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "generatedAt",
+        "correlationId",
+        "profile",
+        "runtime",
+        "model",
+        "platforms",
+        "status",
+        "failures"
+      ],
+      "properties": {
+        "schemaVersion": { "type": "string", "minLength": 1 },
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "correlationId": { "type": "string", "minLength": 1 },
+        "profile": { "$ref": "#/$defs/DeviceAiProtocolProfile" },
+        "runtime": { "$ref": "#/$defs/DeviceAiRuntimeProbeResult" },
+        "model": { "$ref": "#/$defs/DeviceAiModelEvidence" },
+        "platforms": {
+          "type": "object",
+          "required": ["android", "ios"],
+          "properties": {
+            "android": { "$ref": "#/$defs/DeviceAiPlatformReport" },
+            "ios": { "$ref": "#/$defs/DeviceAiPlatformReport" }
+          },
+          "additionalProperties": false
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pass", "fail"]
+        },
+        "failures": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

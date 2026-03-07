@@ -9,6 +9,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { logger } from "./logger";
 
 /** Supported locale codes. Extend this tuple when adding a new language. */
 export const SUPPORTED_LOCALES = ["en", "es", "fr", "zh"] as const;
@@ -23,12 +24,17 @@ const LOCALES_DIR = join(import.meta.dir, "locales");
 function loadLocaleSync(code: string): Record<string, string> {
   const filePath = join(LOCALES_DIR, `${code}.json`);
   if (!existsSync(filePath)) {
-    console.warn(`[i18n] locale file not found: ${filePath}`);
+    logger.warn("locale file not found", { filePath });
     return {};
   }
 
   const raw = readFileSync(filePath, "utf-8");
-  return JSON.parse(raw) as Record<string, string>;
+  const parsed: unknown = JSON.parse(raw);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    logger.warn("locale file has invalid shape", { filePath });
+    return {};
+  }
+  return parsed as Record<string, string>;
 }
 
 /** Pre-loaded locale dictionaries keyed by locale code. */
@@ -76,7 +82,7 @@ export function t(key: string, locale: Locale = activeLocale): string {
 }
 
 /** Interpolate {placeholder} tokens in a translated string. */
-export function tInterp(key: string, values: Record<string, string>, locale: Locale = DEFAULT_LOCALE): string {
+export function tInterp(key: string, values: Record<string, string>, locale: Locale = activeLocale): string {
   let s = t(key, locale);
   for (const [k, v] of Object.entries(values)) {
     s = s.replace(new RegExp(`\\{${k}\\}`, "g"), v);

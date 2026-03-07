@@ -77,7 +77,8 @@ import com.google.ai.edge.gallery.ui.benchmark.BenchmarkScreen
 import com.google.ai.edge.gallery.ui.common.ErrorDialog
 import com.google.ai.edge.gallery.ui.common.ModelPageAppBar
 import com.google.ai.edge.gallery.ui.common.chat.ModelDownloadStatusInfoPanel
-import com.google.ai.edge.gallery.ui.home.HomeScreen
+import com.google.ai.edge.gallery.ui.home.OperatorHomeScreen
+import com.google.ai.edge.gallery.ui.home.RuntimeAdminScreen
 import com.google.ai.edge.gallery.ui.modelmanager.GlobalModelManager
 import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatusType
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManager
@@ -87,11 +88,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 private const val TAG = "AGGalleryNavGraph"
-private const val ROUTE_HOMESCREEN = "homepage"
+private const val ROUTE_OPERATOR_HOME = "operator_home"
 private const val ROUTE_MODEL_LIST = "model_list"
 private const val ROUTE_MODEL = "route_model"
 private const val ROUTE_BENCHMARK = "benchmark"
 private const val ROUTE_MODEL_MANAGER = "model_manager"
+private const val ROUTE_RUNTIME_ADMIN = "runtime_admin"
 private const val ENTER_ANIMATION_DURATION_MS = 500
 private val ENTER_ANIMATION_EASING = EaseOutExpo
 private const val ENTER_ANIMATION_DELAY_MS = 100
@@ -149,7 +151,6 @@ fun GalleryNavHost(
   val lifecycleOwner = LocalLifecycleOwner.current
   var showModelManager by remember { mutableStateOf(false) }
   var pickedTask by remember { mutableStateOf<Task?>(null) }
-  var enableHomeScreenAnimation by remember { mutableStateOf(true) }
   var enableModelListAnimation by remember { mutableStateOf(true) }
 
   // Track whether app is in foreground.
@@ -177,18 +178,16 @@ fun GalleryNavHost(
 
   NavHost(
     navController = navController,
-    startDestination = ROUTE_HOMESCREEN,
+    startDestination = ROUTE_OPERATOR_HOME,
     enterTransition = { slideEnter() },
     exitTransition = { slideExit() },
     popEnterTransition = { slideEnter() },
     popExitTransition = { slideExit() },
   ) {
-    // Home screen.
-    composable(route = ROUTE_HOMESCREEN) {
-      HomeScreen(
+    composable(route = ROUTE_OPERATOR_HOME) {
+      OperatorHomeScreen(
         modelManagerViewModel = modelManagerViewModel,
         tosViewModel = hiltViewModel(),
-        enableAnimation = enableHomeScreenAnimation,
         navigateToTaskScreen = { task ->
           pickedTask = task
           enableModelListAnimation = true
@@ -198,6 +197,15 @@ fun GalleryNavHost(
             Bundle().apply { putString("capability_name", task.id) },
           )
         },
+        onModelsClicked = { navController.navigate(ROUTE_MODEL_MANAGER) },
+        onRuntimeAdminClicked = { navController.navigate(ROUTE_RUNTIME_ADMIN) },
+      )
+    }
+
+    composable(route = ROUTE_RUNTIME_ADMIN) {
+      RuntimeAdminScreen(
+        modelManagerViewModel = modelManagerViewModel,
+        onNavigateUp = { navController.navigateUp() },
         onModelsClicked = { navController.navigate(ROUTE_MODEL_MANAGER) },
       )
     }
@@ -212,10 +220,7 @@ fun GalleryNavHost(
           onModelClicked = { model ->
             navController.navigate("$ROUTE_MODEL/${it.id}/${model.name}")
           },
-          navigateUp = {
-            enableHomeScreenAnimation = false
-            navController.navigateUp()
-          },
+          navigateUp = { navController.navigateUp() },
         )
       }
     }
@@ -322,10 +327,7 @@ fun GalleryNavHost(
     ) { backStackEntry ->
       GlobalModelManager(
         viewModel = modelManagerViewModel,
-        navigateUp = {
-          enableHomeScreenAnimation = false
-          navController.navigateUp()
-        },
+        navigateUp = { navController.navigateUp() },
         onModelSelected = { task, model ->
           navController.navigate("$ROUTE_MODEL/${task.id}/${model.name}")
         },

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { parseMaestroYaml } from "../src/yaml-parser";
 import { RPADriver, getFlowTargetCapabilityProbe } from "../src/flow-engine";
-import { analyzeAutomationStep } from "../src/app";
+import { analyzeAutomationStep } from "../src/flow-automation";
 import {
   FLOW_VERSION,
   type FlowCommand,

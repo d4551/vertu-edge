@@ -1,4 +1,4 @@
-import { resolve } from "path";
+import { resolve } from "node:path";
 import type { ArtifactMetadata } from "../../contracts/flow-contracts";
 import { safeParseJson, type JsonRecord, type JsonValue } from "./config";
 
@@ -62,7 +62,7 @@ function toAbsolutePath(pathValue: string): string {
   return resolve(pathValue);
 }
 
-async function computeSha256Hex(filePath: string): Promise<string> {
+export async function computeSha256Hex(filePath: string): Promise<string> {
   const file = Bun.file(filePath);
   const bytes = await file.arrayBuffer();
   const digest = await crypto.subtle.digest("SHA-256", bytes);

@@ -33,6 +33,7 @@ import com.google.ai.edge.gallery.ui.common.chat.ChatSide
 import com.google.ai.edge.gallery.ui.common.chat.ChatViewModel
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 import com.google.ai.edge.litertlm.ExperimentalApi
+import com.google.ai.edge.gallery.common.MODEL_INIT_TIMEOUT_MS
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
@@ -58,8 +59,15 @@ open class LlmChatViewModelBase() : ChatViewModel() {
       // Loading.
       addMessage(model = model, message = ChatMessageLoading(accelerator = accelerator))
 
-      // Wait for instance to be initialized.
+      // Wait for instance to be initialized (bounded to 60 s).
+      val initDeadline = System.currentTimeMillis() + MODEL_INIT_TIMEOUT_MS
       while (model.instance == null) {
+        if (System.currentTimeMillis() > initDeadline) {
+          onError("Model initialization timed out after ${MODEL_INIT_TIMEOUT_MS / 1000}s")
+          setInProgress(false)
+          setPreparing(false)
+          return@launch
+        }
         delay(100)
       }
       delay(500)
@@ -142,13 +150,16 @@ open class LlmChatViewModelBase() : ChatViewModel() {
     Log.d(TAG, "Done stopping response")
   }
 
-  fun resetSession(task: Task, model: Model) {
+  fun resetSession(task: Task, model: Model, onError: (String) -> Unit = {}) {
     viewModelScope.launch(Dispatchers.Default) {
       setIsResettingSession(true)
       clearAllMessages(model = model)
       stopResponse(model = model)
 
-      while (true) {
+      val maxRetries = 5
+      var attempt = 0
+      var succeeded = false
+      while (attempt < maxRetries) {
         try {
           val supportImage =
             model.llmSupportImage &&
@@ -161,11 +172,17 @@ open class LlmChatViewModelBase() : ChatViewModel() {
             supportImage = supportImage,
             supportAudio = supportAudio,
           )
+          succeeded = true
           break
         } catch (e: Exception) {
-          Log.d(TAG, "Failed to reset session. Trying again")
+          attempt++
+          Log.w(TAG, "Failed to reset session (attempt $attempt/$maxRetries)", e)
         }
         delay(200)
+      }
+      if (!succeeded) {
+        Log.e(TAG, "Session reset failed after $maxRetries attempts")
+        onError("Session reset failed after $maxRetries attempts")
       }
       setIsResettingSession(false)
     }
@@ -173,8 +190,13 @@ open class LlmChatViewModelBase() : ChatViewModel() {
 
   fun runAgain(model: Model, message: ChatMessageText, onError: (String) -> Unit) {
     viewModelScope.launch(Dispatchers.Default) {
-      // Wait for model to be initialized.
+      // Wait for model to be initialized (bounded to 60 s).
+      val initDeadline = System.currentTimeMillis() + MODEL_INIT_TIMEOUT_MS
       while (model.instance == null) {
+        if (System.currentTimeMillis() > initDeadline) {
+          onError("Model initialization timed out after ${MODEL_INIT_TIMEOUT_MS / 1000}s")
+          return@launch
+        }
         delay(100)
       }
 

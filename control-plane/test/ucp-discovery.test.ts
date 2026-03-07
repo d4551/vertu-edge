@@ -1,15 +1,6 @@
 import { expect, test } from "bun:test";
 import { discoverBusinessCapabilities, type UCPManifest } from "../src/ucp-discovery";
-
-type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
-
-async function withMockedFetch<T>(mockFetch: FetchLike, action: () => Promise<T>): Promise<T> {
-  const previousFetch = globalThis.fetch;
-  (globalThis as { fetch: FetchLike }).fetch = mockFetch;
-  return action().finally(() => {
-    (globalThis as { fetch: FetchLike }).fetch = previousFetch;
-  });
-}
+import { withMockedFetch } from "./_helpers";
 
 const validServicesManifest: UCPManifest = {
   ucp: {
@@ -79,13 +70,18 @@ const validManifestWithSigningKeys: UCPManifest = {
   ],
 };
 
-function asManifest(manifest: UCPManifest | null): UCPManifest {
-  expect(manifest).not.toBeNull();
-  return manifest as UCPManifest;
+function expectDiscoverSuccess(
+  result: Awaited<ReturnType<typeof discoverBusinessCapabilities>>,
+): UCPManifest {
+  expect(result.ok).toBe(true);
+  if (!result.ok) {
+    throw new Error(`Expected UCP discovery success, received ${result.error}`);
+  }
+  return result.manifest;
 }
 
-test("discoverBusinessCapabilities returns manifest for valid services-based manifest", async () => {
-  const manifest = await withMockedFetch(
+test("discoverBusinessCapabilities returns success result for valid services-based manifest", async () => {
+  const result = await withMockedFetch(
     async (input) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       expect(url).toContain("/.well-known/ucp");
@@ -96,7 +92,7 @@ test("discoverBusinessCapabilities returns manifest for valid services-based man
       },
     () => discoverBusinessCapabilities("https://shop.example.com"),
   );
-  const safeManifest = asManifest(manifest);
+  const safeManifest = expectDiscoverSuccess(result);
 
   expect(safeManifest.ucp.version).toBe("2026-01-11");
   expect(safeManifest.ucp.capabilities).toHaveLength(1);
@@ -105,8 +101,8 @@ test("discoverBusinessCapabilities returns manifest for valid services-based man
   expect(safeManifest.payment?.handlers?.length).toBe(1);
 });
 
-test("discoverBusinessCapabilities returns manifest for transports-only manifest", async () => {
-  const manifest = await withMockedFetch(
+test("discoverBusinessCapabilities returns success result for transports-only manifest", async () => {
+  const result = await withMockedFetch(
     async () =>
       new Response(JSON.stringify(validTransportsManifest), {
         status: 200,
@@ -114,7 +110,7 @@ test("discoverBusinessCapabilities returns manifest for transports-only manifest
       }),
     () => discoverBusinessCapabilities("https://shop.example.com"),
   );
-  const safeManifest = asManifest(manifest);
+  const safeManifest = expectDiscoverSuccess(result);
 
   expect(safeManifest.ucp.version).toBe("2026-01-11");
   expect(safeManifest.ucp.capabilities).toHaveLength(1);
@@ -125,8 +121,8 @@ test("discoverBusinessCapabilities returns manifest for transports-only manifest
   );
 });
 
-test("discoverBusinessCapabilities returns manifest with signing_keys", async () => {
-  const manifest = await withMockedFetch(
+test("discoverBusinessCapabilities returns success result with signing_keys", async () => {
+  const result = await withMockedFetch(
     async () =>
       new Response(JSON.stringify(validManifestWithSigningKeys), {
         status: 200,
@@ -134,7 +130,7 @@ test("discoverBusinessCapabilities returns manifest with signing_keys", async ()
       }),
     () => discoverBusinessCapabilities("https://shop.example.com"),
   );
-  const safeManifest = asManifest(manifest);
+  const safeManifest = expectDiscoverSuccess(result);
 
   const signingKeys = safeManifest.signing_keys ?? [];
   expect(signingKeys).toHaveLength(1);
@@ -142,21 +138,21 @@ test("discoverBusinessCapabilities returns manifest with signing_keys", async ()
   expect(signingKeys[0]!.kty).toBe("EC");
 });
 
-test("discoverBusinessCapabilities returns null for invalid URL", async () => {
-  const manifest = await discoverBusinessCapabilities("not-a-valid-url");
-  expect(manifest).toBeNull();
+test("discoverBusinessCapabilities returns not_found for invalid URL", async () => {
+  const result = await discoverBusinessCapabilities("not-a-valid-url");
+  expect(result).toEqual({ ok: false, error: "not_found" });
 });
 
-test("discoverBusinessCapabilities returns null for 404 response", async () => {
-  const manifest = await withMockedFetch(
+test("discoverBusinessCapabilities returns not_found for 404 response", async () => {
+  const result = await withMockedFetch(
     async () => new Response("Not Found", { status: 404 }),
     () => discoverBusinessCapabilities("https://shop.example.com"),
   );
-  expect(manifest).toBeNull();
+  expect(result).toEqual({ ok: false, error: "not_found" });
 });
 
-test("discoverBusinessCapabilities returns null for non-JSON content-type", async () => {
-  const manifest = await withMockedFetch(
+test("discoverBusinessCapabilities returns invalid_manifest for non-JSON content-type", async () => {
+  const result = await withMockedFetch(
     async () =>
       new Response(JSON.stringify(validServicesManifest), {
         status: 200,
@@ -164,11 +160,11 @@ test("discoverBusinessCapabilities returns null for non-JSON content-type", asyn
       }),
     () => discoverBusinessCapabilities("https://shop.example.com"),
   );
-  expect(manifest).toBeNull();
+  expect(result).toEqual({ ok: false, error: "invalid_manifest" });
 });
 
-test("discoverBusinessCapabilities returns null for invalid JSON", async () => {
-  const manifest = await withMockedFetch(
+test("discoverBusinessCapabilities returns invalid_json for invalid JSON", async () => {
+  const result = await withMockedFetch(
     async () =>
       new Response("not valid json {", {
         status: 200,
@@ -176,11 +172,11 @@ test("discoverBusinessCapabilities returns null for invalid JSON", async () => {
       }),
     () => discoverBusinessCapabilities("https://shop.example.com"),
   );
-  expect(manifest).toBeNull();
+  expect(result).toEqual({ ok: false, error: "invalid_json" });
 });
 
-test("discoverBusinessCapabilities returns null for invalid manifest structure", async () => {
-  const manifest = await withMockedFetch(
+test("discoverBusinessCapabilities returns invalid_manifest for invalid manifest structure", async () => {
+  const result = await withMockedFetch(
     async () =>
       new Response(JSON.stringify({ ucp: { version: "2026-01-11" } }), {
         status: 200,
@@ -188,22 +184,22 @@ test("discoverBusinessCapabilities returns null for invalid manifest structure",
       }),
     () => discoverBusinessCapabilities("https://shop.example.com"),
   );
-  expect(manifest).toBeNull();
+  expect(result).toEqual({ ok: false, error: "invalid_manifest" });
 });
 
-test("discoverBusinessCapabilities returns null on fetch rejection", async () => {
-  const manifest = await withMockedFetch(
+test("discoverBusinessCapabilities returns network error on fetch rejection", async () => {
+  const result = await withMockedFetch(
     async () => {
       throw new Error("Network error");
     },
     () => discoverBusinessCapabilities("https://shop.example.com"),
   );
-  expect(manifest).toBeNull();
+  expect(result).toEqual({ ok: false, error: "network" });
 });
 
 test("discoverBusinessCapabilities normalizes URL to .well-known/ucp", async () => {
   let capturedUrl = "";
-  await withMockedFetch(
+  const result = await withMockedFetch(
     async (input) => {
       capturedUrl = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       return new Response(JSON.stringify(validServicesManifest), {
@@ -213,5 +209,6 @@ test("discoverBusinessCapabilities normalizes URL to .well-known/ucp", async () 
     },
     () => discoverBusinessCapabilities("https://shop.example.com/path"),
   );
+  expect(result.ok).toBe(true);
   expect(capturedUrl).toBe("https://shop.example.com/.well-known/ucp");
 });

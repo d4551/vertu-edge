@@ -20,7 +20,6 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.util.Log
 import android.view.ViewGroup
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
@@ -93,6 +92,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.webkit.WebViewAssetLoader
 import com.google.ai.edge.gallery.GalleryEvent
 import com.google.ai.edge.gallery.R
+import com.google.ai.edge.gallery.common.StructuredLog
 import com.google.ai.edge.gallery.data.ConfigKeys
 import com.google.ai.edge.gallery.data.ModelDownloadStatusType
 import com.google.ai.edge.gallery.data.Task
@@ -113,10 +113,8 @@ import java.security.MessageDigest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 private const val TAG = "AGTinyGarden"
-private const val ASSETS_BASE_URL = "https://appassets.androidplatform.net"
 
 /** The main screen for the Tiny Garden game. */
 @Composable
@@ -243,8 +241,26 @@ fun MainUi(
   var prevSeed by remember { mutableStateOf("") }
   var prevPlots by remember { mutableStateOf("") }
   var prevAction by remember { mutableStateOf("") }
+  var showTutorialOnLoad by remember { mutableStateOf<Boolean?>(null) }
+  var showHelpAfterLoad by remember { mutableStateOf(false) }
   val resources = LocalResources.current
   val context = LocalContext.current
+  val assetBundleResult = remember(context) { TinyGardenAssetBundle.load(context) }
+  val assetBundle = assetBundleResult.getOrNull()
+
+  LaunchedEffect(Unit) {
+    val isFirstRun = viewModel.consumeTinyGardenFirstRun()
+    showTutorialOnLoad = isFirstRun
+    showHelpAfterLoad = isFirstRun
+  }
+
+  LaunchedEffect(assetBundleResult.exceptionOrNull()) {
+    assetBundleResult.exceptionOrNull()?.let { throwable ->
+      errorDialogContent = throwable.message ?: context.getString(R.string.unknown_error)
+      showErrorDialog = true
+      StructuredLog.e(TAG, "tiny_garden_asset_bundle_load_failed", throwable)
+    }
+  }
 
   val taskColor = getTaskBgGradientColors(task = task)[1]
   val curDownloadStatus = modelManagerUiState.modelDownloadStatus[model.name]?.status
@@ -304,13 +320,24 @@ fun MainUi(
       // Convert command into json that can be consumed by the game.
       val commandJson =
         """[{"item": ${command.item}, "plot":[${command.plots.joinToString(",")}]}]"""
-      Log.d(TAG, "commandJson: $commandJson")
+      StructuredLog.d(
+        TAG,
+        "tiny_garden_command_json_created",
+        "commandJson" to commandJson,
+      )
 
       // Call into the game webview.
       val jsScript = "tinyGarden.runCommands('$commandJson')"
       webViewRef
         ?.runCatching { evaluateJavascript(jsScript, null) }
-        ?.onFailure { e -> Log.e(TAG, "$e") }
+        ?.onFailure { error ->
+          StructuredLog.e(
+            TAG,
+            "tiny_garden_command_bridge_failed",
+            error,
+            "script" to jsScript,
+          )
+        }
 
       // Save seed, plots, and action so that we can add them to system prompt when resetting
       // conversation.
@@ -329,7 +356,13 @@ fun MainUi(
           TinyGardenItem.SCYTHE.ordinal + 1 -> TinyGardenItem.SCYTHE.label
           else -> ""
         }
-      Log.d(TAG, "prevSeed: '$prevSeed', prevPlots: '$prevPlots', prevAction: '$prevAction'")
+      StructuredLog.d(
+        TAG,
+        "tiny_garden_previous_action_updated",
+        "prevSeed" to prevSeed,
+        "prevPlots" to prevPlots,
+        "prevAction" to prevAction,
+      )
     }
   }
 
@@ -345,7 +378,9 @@ fun MainUi(
       if (text.trim().sha256() == "XtNztQDSDvVpMRPOK+q9tZs43x/VD1teVs3CvWp7zkc=") {
         webViewRef
           ?.runCatching { evaluateJavascript("tinyGarden.unlockAll()", null) }
-          ?.onFailure { e -> Log.e(TAG, "$e") }
+          ?.onFailure { error ->
+            StructuredLog.e(TAG, "tiny_garden_unlock_all_bridge_failed", error)
+          }
       } else {
         // Run inference to get response command in json.
         viewModel.getCommand(
@@ -378,9 +413,13 @@ fun MainUi(
                 valueType = ValueType.INT,
               )
                 as Int
-            Log.d(TAG, "Target turn to reset: $numTurnsToReset")
+            StructuredLog.d(
+              TAG,
+              "tiny_garden_reset_turn_target",
+              "numTurnsToReset" to numTurnsToReset,
+            )
             if (uiState.numTurns == numTurnsToReset) {
-              Log.d(TAG, "!! This is the turn to reset conversation")
+              StructuredLog.d(TAG, "tiny_garden_reset_turn_reached")
               viewModel.resetConversation(
                 model = model,
                 tools = tools,
@@ -434,9 +473,9 @@ fun MainUi(
       }
 
       if (!same) {
-        Log.d(TAG, "model config values changed.")
+        StructuredLog.d(TAG, "tiny_garden_model_config_changed")
         if (nonNumTurnsConfigChanged) {
-          Log.d(TAG, "need to reset engine")
+          StructuredLog.d(TAG, "tiny_garden_engine_reset_required")
           viewModel.resetEngine(
             context = context,
             model = model,
@@ -447,7 +486,7 @@ fun MainUi(
             },
           )
         } else {
-          Log.d(TAG, "need to reset conversation")
+          StructuredLog.d(TAG, "tiny_garden_conversation_reset_required")
           viewModel.resetConversation(
             model = model,
             tools = tools,
@@ -461,7 +500,7 @@ fun MainUi(
   }
 
   // Show a loading indicator before the model is initialized.
-  if (!modelManagerUiState.isModelInitialized(model = model)) {
+  if (showTutorialOnLoad == null || !modelManagerUiState.isModelInitialized(model = model)) {
     Row(
       modifier = Modifier.fillMaxSize(),
       verticalAlignment = Alignment.CenterVertically,
@@ -526,17 +565,27 @@ fun MainUi(
 
                     override fun onPageFinished(view: WebView?, url: String?) {
                       super.onPageFinished(view, url)
-                      Log.d(TAG, "webview finished loading")
+                      StructuredLog.d(
+                        TAG,
+                        "tiny_garden_webview_finished_loading",
+                        "url" to url.orEmpty(),
+                      )
 
                       // Show help on first launch.
-                      if (!runBlocking { viewModel.dataStoreRepository.getHasRunTinyGarden() }) {
-                        Log.d(TAG, "First time running Tiny Garden. Showing help screen...")
-                        runBlocking { viewModel.dataStoreRepository.setHasRunTinyGarden(true) }
+                      if (showHelpAfterLoad) {
+                        showHelpAfterLoad = false
+                        StructuredLog.d(TAG, "tiny_garden_help_first_run")
                         scope.launch {
                           delay(1000)
                           webViewRef
                             ?.runCatching { evaluateJavascript("tinyGarden.showHelp()", null) }
-                            ?.onFailure { e -> Log.e(TAG, "$e") }
+                            ?.onFailure { error ->
+                              StructuredLog.e(
+                                TAG,
+                                "tiny_garden_show_help_bridge_failed",
+                                error,
+                              )
+                            }
                         }
                       }
                     }
@@ -552,18 +601,23 @@ fun MainUi(
                       val url = request.url.toString()
 
                       // Check if the URL should be loaded internally (e.g., local assets)
-                      if (url.startsWith(ASSETS_BASE_URL)) {
+                      if (assetBundle != null && url.startsWith(assetBundle.assetBaseUrl)) {
                         // Return false to let the WebView load the URL internally
                         return false
                       }
 
                       // If it's an external URL, launch an Android Intent to open it
                       // in the system's default browser.
-                      try {
+                      runCatching {
                         val intent = Intent(Intent.ACTION_VIEW, url.toUri())
                         view?.context?.startActivity(intent)
-                      } catch (e: Exception) {
-                        Log.e(TAG, "Could not open external URL: $url", e)
+                      }.onFailure { error ->
+                        StructuredLog.e(
+                          TAG,
+                          "tiny_garden_external_url_open_failed",
+                          error,
+                          "url" to url,
+                        )
                       }
 
                       // Return true to signal that we have handled the URL loading and
@@ -576,9 +630,12 @@ fun MainUi(
                   object : WebChromeClient() {
                     // Log console messages.
                     override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
-                      Log.d(
+                      StructuredLog.d(
                         TAG,
-                        "${consoleMessage?.message()} -- From line ${consoleMessage?.lineNumber()} of ${consoleMessage?.sourceId()}",
+                        "tiny_garden_console_message",
+                        "message" to consoleMessage?.message(),
+                        "lineNumber" to consoleMessage?.lineNumber(),
+                        "sourceId" to consoleMessage?.sourceId(),
                       )
                       return super.onConsoleMessage(consoleMessage)
                     }
@@ -586,14 +643,15 @@ fun MainUi(
 
                 // Load page.
                 //
-                // http://appassets.androidplatform.net' is the recommended, reserved domain.
-                var url = "$ASSETS_BASE_URL/assets/tinygarden/index.html"
-                if (!runBlocking { viewModel.dataStoreRepository.getHasRunTinyGarden() }) {
-                  Log.d(TAG, "First time running Tiny Garden. Showing tutorial screen...")
-                  runBlocking { viewModel.dataStoreRepository.setHasRunTinyGarden(true) }
-                  url = "$url?tutorial=1"
+                // https://appassets.androidplatform.net is the recommended reserved domain.
+                if (assetBundle != null) {
+                  var url = assetBundle.entryUrl()
+                  if (showTutorialOnLoad == true) {
+                    StructuredLog.d(TAG, "tiny_garden_tutorial_first_run")
+                    url = assetBundle.entryUrl(query = "tutorial=1")
+                  }
+                  loadUrl(url)
                 }
-                loadUrl(url)
               }
             },
           )
@@ -728,12 +786,12 @@ fun MainUi(
 /** Returns the SHA-256 hash of the given string as a base64 encoded string. */
 private fun String.sha256(): String {
   val inputBytes = this.toByteArray()
-  return try {
+  return runCatching {
     val sha256 = MessageDigest.getInstance("SHA-256")
     val digest = sha256.digest(inputBytes)
     BaseEncoding.base64().encode(digest)
-  } catch (e: Exception) {
-    e.printStackTrace()
+  }.getOrElse { error ->
+    StructuredLog.e(TAG, "tiny_garden_sha256_failed", error)
     ""
   }
 }

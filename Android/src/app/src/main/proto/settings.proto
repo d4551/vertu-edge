@@ -71,6 +71,7 @@ message Settings {
   bool has_seen_benchmark_comparison_help = 7;
   // Has the Gemma terms of use been accepted.
   bool is_gemma_terms_accepted = 8;
+  string app_locale_tag = 9;
 }
 
 message UserData {

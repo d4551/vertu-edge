@@ -17,6 +17,7 @@
 package com.google.ai.edge.gallery
 
 import android.animation.ObjectAnimator
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -47,8 +48,11 @@ import androidx.core.animation.doOnEnd
 import androidx.core.os.bundleOf
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
+import com.google.ai.edge.gallery.common.StructuredLog
+import com.google.ai.edge.gallery.common.VertuRuntimeConfig
+import com.google.ai.edge.gallery.data.DeviceAiProtocolAutomationParser
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
-import com.google.ai.edge.gallery.ui.theme.GalleryTheme
+import com.google.ai.edge.gallery.ui.theme.VertuTheme
 import com.google.ai.edge.litertlm.ExperimentalApi
 import com.google.ai.edge.litertlm.ExperimentalFlags
 import com.google.firebase.analytics.FirebaseAnalytics
@@ -72,7 +76,7 @@ class MainActivity : ComponentActivity() {
       }
 
       setContent {
-        GalleryTheme {
+        VertuTheme {
           Surface(modifier = Modifier.fillMaxSize()) {
             GalleryApp(modelManagerViewModel = modelManagerViewModel)
 
@@ -101,6 +105,7 @@ class MainActivity : ComponentActivity() {
     }
 
     modelManagerViewModel.loadModelAllowlist()
+    handleAutomationIntent(intent)
 
     // Show splash screen.
     val splashScreen = installSplashScreen()
@@ -158,8 +163,16 @@ class MainActivity : ComponentActivity() {
     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
   }
 
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    modelManagerViewModel.clearOperatorExternalOverlayState()
+    handleAutomationIntent(intent)
+  }
+
   override fun onResume() {
     super.onResume()
+    modelManagerViewModel.clearOperatorExternalOverlayState()
 
     firebaseAnalytics?.logEvent(
       FirebaseAnalytics.Event.APP_OPEN,
@@ -173,5 +186,25 @@ class MainActivity : ComponentActivity() {
 
   companion object {
     private const val TAG = "AGMainActivity"
+  }
+
+  private fun handleAutomationIntent(intent: Intent?) {
+    val launchRequest =
+      DeviceAiProtocolAutomationParser.parseDeepLink(
+        dataString = intent?.dataString,
+        expectedScheme = VertuRuntimeConfig.deepLinkScheme,
+      ) ?: return
+    intent?.data = null
+    lifecycleScope.launch {
+      modelManagerViewModel.awaitModelAllowlistLoaded()
+      StructuredLog.d(
+        TAG,
+        "device_ai_protocol_launch_received",
+        "trigger" to launchRequest.trigger.name.lowercase(),
+        "modelRef" to launchRequest.modelRef.orEmpty(),
+        "fileName" to launchRequest.fileName.orEmpty(),
+      )
+      modelManagerViewModel.runDeviceAiProtocolFromAutomationLaunch(launchRequest)
+    }
   }
 }

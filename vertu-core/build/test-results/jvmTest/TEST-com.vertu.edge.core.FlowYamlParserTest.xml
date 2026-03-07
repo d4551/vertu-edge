@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.vertu.edge.core.FlowYamlParserTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-03-04T20:01:32" hostname="Brandons-MacBook-Pro.local" time="0.124">
+<testsuite name="com.vertu.edge.core.FlowYamlParserTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-03-06T16:27:43" hostname="Brandons-MacBook-Pro.local" time="0.094">
   <properties/>
-  <testcase name="parseAndSerializeFlowV1[jvm]" classname="com.vertu.edge.core.FlowYamlParserTest" time="0.124"/>
+  <testcase name="parseAndSerializeFlowV1[jvm]" classname="com.vertu.edge.core.FlowYamlParserTest" time="0.094"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

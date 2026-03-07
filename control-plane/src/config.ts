@@ -1,59 +1,54 @@
 /** Shared control-plane runtime configuration constants. */
 
 import { ConfigParseError } from "./errors";
-import { join } from "path";
-import { parse as parseJsonc, printParseErrorCode, type ParseError } from "jsonc-parser";
+import { join } from "node:path";
+import canonicalModelPullPresetConfigJson from "../config/model-pull-presets.json" with { type: "json" };
+import canonicalModelSourceRegistryJson from "../config/model-sources.json" with { type: "json" };
+import canonicalProviderRegistryJson from "../config/providers.json" with { type: "json" };
 import {
   CHAT_TTS_DEFAULT_OUTPUT_MIME_TYPE,
   CHAT_TTS_OUTPUT_MIME_TYPES,
+  SUPPORTED_BUILD_TYPES as SHARED_SUPPORTED_BUILD_TYPES,
+  SUPPORTED_DESKTOP_BUILD_VARIANTS as SHARED_SUPPORTED_DESKTOP_BUILD_VARIANTS,
 } from "../../contracts/flow-contracts";
 import type {
   BuildKind,
   BuildType,
   ControlPlaneState as SharedControlPlaneState,
+  DesktopBuildVariant,
   FlowRunTarget,
   ModelRefValidationMode,
   ModelRefValidationPolicy,
   ModelSource,
   ChatTtsOutputMimeType,
 } from "../../contracts/flow-contracts";
-/** Strict JSON scalar type used for config/runtime decoding. */
-export type JsonScalar = string | number | boolean | null;
-/** Strict JSON object type used for config/runtime decoding. */
-export type JsonRecord = { [key: string]: JsonValue };
-/** Strict JSON value used instead of opaque `unknown` types. */
-export type JsonValue = JsonScalar | JsonRecord | JsonValue[];
-
-/** Result of a safe JSON parse. Avoids try/catch in callers. */
-export type ParseResult<T> = { ok: true; data: T } | { ok: false; error: string };
-
-/** Parse JSON without throwing. Returns Result for explicit error handling. */
-export function safeParseJson<T extends JsonValue>(raw: string): ParseResult<T> {
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) {
-    return { ok: false, error: "Empty input" };
-  }
-  const errors: ParseError[] = [];
-  const decoded = parseJsonc(trimmed, errors, { allowTrailingComma: false, disallowComments: true }) as JsonValue;
-  if (errors.length > 0) {
-    const firstError = errors[0];
-    if (!firstError) {
-      return { ok: false, error: "JSON parse error: invalid payload" };
-    }
-    const parseCode = printParseErrorCode(firstError.error);
-    return { ok: false, error: `JSON parse error: ${parseCode} at offset ${firstError.offset}` };
-  }
-  if (decoded === null || typeof decoded === "string" || typeof decoded === "number" || typeof decoded === "boolean") {
-    return { ok: true, data: decoded as T };
-  }
-  if (Array.isArray(decoded)) {
-    return { ok: true, data: decoded as T };
-  }
-  if (typeof decoded === "object" && decoded !== null) {
-    return { ok: true, data: decoded as T };
-  }
-  return { ok: false, error: "Invalid JSON structure" };
-}
+import { type DeviceAiProtocolProfile } from "../../contracts/device-ai-protocol";
+import {
+  isJsonRecord,
+  readOptionalUrlEnv,
+  readPositiveIntEnv,
+  readStringArrayEnv,
+  readStringEnv,
+  safeParseJson,
+  toTrimmedString,
+  type JsonInput,
+  type JsonValue,
+} from "./config/env";
+import { DEVICE_AI_PROFILE_CONFIG_PATH, readDeviceAiProfileFile } from "./config/device-ai-profile";
+export {
+  isJsonRecord,
+  readOptionalUrlEnv,
+  readPositiveIntEnv,
+  readStringArrayEnv,
+  readStringEnv,
+  safeParseJson,
+  toTrimmedString,
+  type JsonRecord,
+  type JsonInput,
+  type JsonScalar,
+  type JsonValue,
+  type ParseResult,
+} from "./config/env";
 
 interface ProviderRegistryConfig {
   id: string;
@@ -116,7 +111,6 @@ export interface ModelSourceConfig {
   enforceAllowlist: boolean;
 }
 
-const SAFE_DEFAULT_CHAT_MODEL = "gpt-4o-mini";
 const DEFAULT_DESKTOP_TARGET: FlowRunTarget = process.platform === "darwin"
   ? "osx"
   : process.platform === "win32"
@@ -131,11 +125,19 @@ export const DEFAULT_BUILD_PLATFORM: BuildKind = "android";
 /** Default build type for app-build jobs. */
 export const DEFAULT_BUILD_TYPE: BuildType = "debug";
 /** Canonical supported build types. */
-export const SUPPORTED_BUILD_TYPES = ["debug", "release"] as const;
+export const SUPPORTED_BUILD_TYPES: readonly BuildType[] = SHARED_SUPPORTED_BUILD_TYPES;
 /** Default flow script scroll step count when omitted. */
 export const FLOW_ENGINE_SCROLL_STEP_DEFAULT = 1;
-/** Default flow script swipe distance fraction when omitted. */
-export const FLOW_ENGINE_SWIPE_DISTANCE_FRACTION_DEFAULT = 0.5;
+/** Default scroll distance fraction for ADB-based scroll commands (see also ADB_SWIPE below). */
+export const FLOW_ENGINE_ADB_SCROLL_DISTANCE_FRACTION_DEFAULT = 0.5;
+/** Default waitForAnimation timeout (ms) when omitted from flow YAML. */
+export const FLOW_ENGINE_WAIT_FOR_ANIMATION_DEFAULT_MS = 600;
+/** Maximum retry delay cap (ms) to prevent unbounded backoff growth. */
+export const FLOW_ENGINE_MAX_RETRY_DELAY_MS = 30_000;
+/** ADB input swipe animation duration (ms). */
+export const FLOW_ENGINE_ADB_SWIPE_DURATION_MS = 200;
+/** Default swipe distance fraction for adb swipe commands. */
+export const FLOW_ENGINE_ADB_SWIPE_DISTANCE_FRACTION_DEFAULT = 0.6;
 /** Environment keys for control-plane port discovery. */
 export const CONTROL_PLANE_PORT_KEYS = ["CONTROL_PLANE_PORT", "PORT"] as const;
 /** Default control-plane listen port. */
@@ -182,6 +184,10 @@ export const MODEL_PULL_JOB_PAYLOAD_INVALID_REASON = "Model pull job payload cou
 export const MODEL_PULL_IN_PROGRESS_REASON = "model pull is in progress";
 /** Reason when model pull is paused. */
 export const MODEL_PULL_PAUSED_REASON = "model pull is paused";
+/** User-facing message when a model pull is cancelled. */
+export const MODEL_PULL_CANCELLED_MESSAGE = "Model pull cancelled by operator";
+/** User-facing message when a model pull is resumed. */
+export const MODEL_PULL_RESUMED_MESSAGE = "Model pull resumed (requeued) by operator";
 /** Reason when app build job is not found. */
 export const APP_BUILD_JOB_NOT_FOUND_REASON = "Requested app build job could not be found.";
 /** Reason when app build job payload is invalid. */
@@ -196,6 +202,8 @@ export const APP_BUILD_RESUMED_MESSAGE = "Build job resumed (requeued) by operat
 export const APP_BUILD_UNSUPPORTED_PLATFORM_REASON = "Unsupported build platform";
 /** Reason when build type is unsupported. */
 export const APP_BUILD_UNSUPPORTED_BUILD_TYPE_REASON = "Unsupported buildType";
+/** Reason when Android build Java runtime is unavailable. */
+export const APP_BUILD_ANDROID_JAVA_MISSING_REASON = "Android build requires Java runtime on this host.";
 /** Reason when iOS build is attempted on non-macOS. */
 export const APP_BUILD_IOS_MAC_ONLY_REASON = "iOS build is only supported on macOS hosts.";
 /** Reason when iOS toolchain is unavailable. */
@@ -204,24 +212,62 @@ export const APP_BUILD_IOS_TOOLING_MISSING_REASON = "iOS build requires Xcode bu
 export const APP_BUILD_IOS_SCHEME_MISSING_REASON = "iOS build requires at least one shared Xcode app scheme.";
 /** Reason when the requested iOS app scheme is not configured. */
 export const APP_BUILD_IOS_SCHEME_NOT_FOUND_REASON = "The requested iOS scheme is not available.";
+/** Reason when desktop build Bun runtime is unavailable. */
+export const APP_BUILD_DESKTOP_BUN_MISSING_REASON = "Desktop build requires Bun runtime on this host.";
+/** Reason when desktop build variant (target triple) is unsupported. */
+export const APP_BUILD_DESKTOP_UNSUPPORTED_VARIANT_REASON = "Unsupported desktop build variant.";
+/** Supported desktop build target triples. */
+export const SUPPORTED_DESKTOP_BUILD_VARIANTS: readonly DesktopBuildVariant[] = SHARED_SUPPORTED_DESKTOP_BUILD_VARIANTS;
+/** Content type for desktop standalone binaries. */
+export const DESKTOP_BUILD_CONTENT_TYPE = "application/octet-stream";
 /** Reason when outputDir traverses parent directories. */
 export const APP_BUILD_OUTPUT_DIR_TRAVERSE_REASON = "outputDir must not traverse parent directories.";
+/** Reason when outputDir cannot be prepared for a build. */
+export const APP_BUILD_OUTPUT_DIR_INVALID_REASON = "Build outputDir is invalid or unavailable on this host.";
+/** Reason when the selected build script cannot be found. */
+export const APP_BUILD_SCRIPT_MISSING_REASON = "App build script is not available for the selected platform.";
+/** Reason when app build execution cannot be started or completed deterministically. */
+export const APP_BUILD_EXECUTION_FAILED_REASON = "App build could not be started or completed on this host.";
 /** Message when build completes successfully. */
 export const APP_BUILD_SUCCESS_MESSAGE = "Build completed successfully";
 /** Fallback message when app build process fails. */
 export const APP_BUILD_FAILURE_FALLBACK_MESSAGE = "App build process failed.";
 /** Provider request timeout for model/list + chat compatibility calls. */
 export const AI_PROVIDER_REQUEST_TIMEOUT_MS = readPositiveIntEnv("AI_PROVIDER_REQUEST_TIMEOUT_MS", 8_000);
+/** Timeout for `ramalama list` subprocess used by `/api/models`. */
+export const RAMALAMA_LIST_TIMEOUT_MS = readPositiveIntEnv("RAMALAMA_LIST_TIMEOUT_MS", 4_000);
 /** Shared chat max token cap for provider completions. */
 export const AI_CHAT_MAX_TOKENS = readPositiveIntEnv("AI_CHAT_MAX_TOKENS", 2_048);
 /** Maximum timeout for model pull requests. */
 export const MAX_MODEL_PULL_TIMEOUT_MS = readPositiveIntEnv("MODEL_PULL_TIMEOUT_MAX_MS", 24 * 60 * 60 * 1000);
+/** Minimum free disk space (bytes) required before starting a model pull (default 2 GB). */
+export const MIN_FREE_DISK_BYTES = readPositiveIntEnv("MIN_FREE_DISK_BYTES", 2 * 1024 * 1024 * 1024);
+/** Timeout for HuggingFace API metadata lookups (ms). */
+export const HF_METADATA_TIMEOUT_MS = readPositiveIntEnv("HF_METADATA_TIMEOUT_MS", 5_000);
+/** Maximum age (ms) of terminal jobs before housekeeping pruning (default 30 days). */
+export const JOB_PRUNE_MAX_AGE_MS = readPositiveIntEnv("JOB_PRUNE_MAX_AGE_MS", 30 * 24 * 60 * 60 * 1000);
+/** Interval (ms) between automatic job/event pruning passes (default 6 hours). */
+export const JOB_PRUNE_INTERVAL_MS = readPositiveIntEnv("JOB_PRUNE_INTERVAL_MS", 6 * 60 * 60 * 1000);
+/** Interval (ms) between automatic SQLite VACUUM runs (default 24 hours). */
+export const SQLITE_VACUUM_INTERVAL_MS = readPositiveIntEnv("SQLITE_VACUUM_INTERVAL_MS", 24 * 60 * 60 * 1000);
 /** Rate limit window for chat completions (ms). */
 export const CHAT_RATE_LIMIT_WINDOW_MS = readPositiveIntEnv("CHAT_RATE_LIMIT_WINDOW_MS", 1_000);
 /** Maximum allowed YAML body size for flow submission (bytes). */
 export const MAX_YAML_BYTES = readPositiveIntEnv("MAX_YAML_BYTES", 64 * 1024);
 /** Default flow adapter command timeout (ms). */
 export const FLOW_ADAPTER_COMMAND_TIMEOUT_MS = readPositiveIntEnv("FLOW_ADAPTER_COMMAND_TIMEOUT_MS", 10_000);
+/**
+ * Optional remote iOS driver agent URL. When set, the iOS adapter forwards
+ * commands to this HTTP endpoint instead of requiring local macOS + xcrun.
+ * This enables running iOS flows from any host (Linux CI, cloud, etc.).
+ * Expected format: "http://mac-host:9400" (no trailing slash).
+ */
+export const IOS_REMOTE_AGENT_URL = readOptionalUrlEnv("IOS_REMOTE_AGENT_URL");
+/**
+ * Optional remote Android driver agent URL. When set, the Android adapter
+ * forwards commands to this HTTP endpoint instead of local adb.
+ */
+export const ANDROID_REMOTE_AGENT_URL = readOptionalUrlEnv("ANDROID_REMOTE_AGENT_URL");
 /** Anthropic API version header. */
 export const ANTHROPIC_API_VERSION = "2023-06-01";
 /** Ollama model listing endpoint suffix. */
@@ -240,72 +286,18 @@ export const CHAT_TTS_OUTPUT_FORMATS = CHAT_TTS_OUTPUT_MIME_TYPES;
 /** Default voice used for OpenAI-compatible TTS requests. */
 export const DEFAULT_CHAT_TTS_VOICE = readStringEnv("DEFAULT_CHAT_TTS_VOICE", "alloy");
 
-function readPositiveIntEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (!raw) {
-    return fallback;
-  }
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return fallback;
-  }
-  return parsed;
-}
-
-function readStringEnv(name: string, fallback: string): string {
-  const raw = process.env[name];
-  if (!raw) {
-    return fallback;
-  }
-  const trimmed = raw.trim();
-  return trimmed.length > 0 ? trimmed : fallback;
-}
-
-function readStringArrayEnv(name: string, fallback: readonly string[]): string[] {
-  const raw = process.env[name];
-  if (!raw) {
-    return [...fallback];
-  }
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return [...fallback];
-  }
-  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-    const parsed = safeParseJson<JsonValue>(trimmed);
-    if (!parsed.ok) return [...fallback];
-    const decoded = parsed.data;
-    if (!Array.isArray(decoded)) return [...fallback];
-    const values = decoded
-      .map((value) => (typeof value === "string" ? value.trim() : ""))
-      .filter((value) => value.length > 0);
-    return values.length > 0 ? values : [...fallback];
-  }
-
-  const values = trimmed
-    .split(",")
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0);
-  return values.length > 0 ? values : [...fallback];
-}
-
-function sanitizeModelPullPreset(value: JsonValue | undefined): string {
+function sanitizeModelPullPreset(value: JsonInput | undefined): string {
   if (typeof value === "string") {
     return value.trim();
   }
   return "";
 }
 
-const FALLBACK_MODEL_PULL_PRESET_PLACEHOLDER = "owner/repo";
-
-function parseModelPullPresetConfig(input: JsonValue): ModelPullPresetConfig {
-  const fallback = {
-    defaultModelRef: SAFE_DEFAULT_CHAT_MODEL,
-    presets: [SAFE_DEFAULT_CHAT_MODEL],
-    modelRefPlaceholder: FALLBACK_MODEL_PULL_PRESET_PLACEHOLDER,
-  } as const;
-
+function parseModelPullPresetConfig(input: JsonInput | undefined): ModelPullPresetConfig {
   if (!isJsonRecord(input)) {
-    return fallback;
+    throw new ConfigParseError("Invalid model pull preset config: expected JSON object", {
+      details: "control-plane/config/model-pull-presets.json must export an object.",
+    });
   }
 
   const defaultModelRef = sanitizeModelPullPreset(input.defaultModelRef);
@@ -317,45 +309,33 @@ function parseModelPullPresetConfig(input: JsonValue): ModelPullPresetConfig {
   const sanitizedPresets = presets.length > 0 ? Array.from(new Set(presets)) : [];
   const resolvedDefaultModelRef = defaultModelRef.length > 0
     ? defaultModelRef
-    : sanitizedPresets.at(0) ?? fallback.defaultModelRef;
-
-  return {
-    defaultModelRef: resolvedDefaultModelRef,
-    presets: sanitizedPresets.length > 0 ? sanitizedPresets : fallback.presets,
-    modelRefPlaceholder: modelRefPlaceholder.length > 0 ? modelRefPlaceholder : fallback.modelRefPlaceholder,
-  };
-}
-
-async function readModelPullPresetFile(path: string): Promise<ModelPullPresetConfig> {
-  const file = Bun.file(path);
-  const exists = await file.exists();
-  if (!exists) {
-    throw new ConfigParseError(
-      `Model pull preset file is missing at '${path}'`,
-      { details: "Missing control-plane config file." },
-    );
+    : sanitizedPresets.at(0);
+  if (!resolvedDefaultModelRef) {
+    throw new ConfigParseError("Model pull preset config requires at least one modelRef", {
+      details: "Provide defaultModelRef or at least one presets entry in control-plane/config/model-pull-presets.json.",
+    });
   }
-
-  const raw = await file.text();
-  const parsed = safeParseJson<JsonValue>(raw);
-  if (!parsed.ok) {
-    throw new ConfigParseError(`Failed to parse model pull preset JSON from '${path}': ${parsed.error}`, {
-      details: parsed.error,
+  if (!modelRefPlaceholder) {
+    throw new ConfigParseError("Model pull preset config requires modelRefPlaceholder", {
+      details: "Provide modelRefPlaceholder in control-plane/config/model-pull-presets.json.",
     });
   }
 
-  return parseModelPullPresetConfig(parsed.data);
+  return {
+    defaultModelRef: resolvedDefaultModelRef,
+    presets: sanitizedPresets.length > 0 ? sanitizedPresets : [resolvedDefaultModelRef],
+    modelRefPlaceholder,
+  };
 }
 
-function normalizeModelSourceConfig(input: JsonValue): ModelSourceConfigInput | null {
+function normalizeModelSourceConfig(input: JsonInput | undefined, sourceLabel: string, index: number): ModelSourceConfigInput {
   if (!isJsonRecord(input)) {
-    return null;
+    throw new ConfigParseError(
+      `Invalid model source entry at index ${index} in ${sourceLabel}`,
+      { details: "Each source entry must be a JSON object." },
+    );
   }
   const id = toTrimmedString(input.id).toLowerCase();
-  if (!id) {
-    return null;
-  }
-
   const displayName = toTrimmedString(input.displayName);
   const description = toTrimmedString(input.description);
   const modelRefPlaceholder = toTrimmedString(input.modelRefPlaceholder);
@@ -363,7 +343,19 @@ function normalizeModelSourceConfig(input: JsonValue): ModelSourceConfigInput | 
   const canonicalHost = toTrimmedString(input.canonicalHost).toLowerCase();
   const ramalamaTransportPrefix = toTrimmedString(input.ramalamaTransportPrefix).toLowerCase();
   const modelRefValidationRaw = toTrimmedString(input.modelRefValidation).toLowerCase();
-  const modelRefValidation: ModelRefValidationMode = modelRefValidationRaw === "huggingface" ? "huggingface" : "opaque";
+  if (!id || !displayName || !modelRefPlaceholder) {
+    throw new ConfigParseError(
+      `Invalid model source entry '${id || `index ${index}`}' in ${sourceLabel}`,
+      { details: "Model source entries require id, displayName, and modelRefPlaceholder." },
+    );
+  }
+  if (modelRefValidationRaw !== "huggingface" && modelRefValidationRaw !== "opaque") {
+    throw new ConfigParseError(
+      `Invalid modelRefValidation for source '${id}' in ${sourceLabel}`,
+      { details: "Supported values are 'huggingface' and 'opaque'." },
+    );
+  }
+  const modelRefValidation: ModelRefValidationMode = modelRefValidationRaw;
 
   const aliases = Array.isArray(input.aliases)
     ? input.aliases
@@ -389,26 +381,40 @@ function normalizeModelSourceConfig(input: JsonValue): ModelSourceConfigInput | 
   };
 }
 
-function parseModelSourceRegistryConfig(input: JsonValue): ModelSourceRegistryConfig | null {
-  if (Array.isArray(input)) {
-    const sources = input
-      .map((entry) => normalizeModelSourceConfig(entry))
-      .filter((entry): entry is ModelSourceConfigInput => entry !== null);
-    return sources.length > 0 ? { sources } : null;
-  }
-
+function parseModelSourceRegistryConfig(input: JsonInput | undefined, sourceLabel: string): ModelSourceRegistryConfig {
   if (!isJsonRecord(input)) {
-    return null;
+    throw new ConfigParseError(
+      `Invalid model source registry in ${sourceLabel}`,
+      { details: "Expected JSON object with a non-empty sources array." },
+    );
   }
 
   const defaultSource = toTrimmedString(input.defaultSource).toLowerCase();
   const rawSources = Array.isArray(input.sources) ? input.sources : [];
-  const sources = rawSources
-    .map((entry) => normalizeModelSourceConfig(entry))
-    .filter((entry): entry is ModelSourceConfigInput => entry !== null);
+  if (rawSources.length === 0) {
+    throw new ConfigParseError(
+      `Invalid model source registry in ${sourceLabel}`,
+      { details: "Expected sources array with at least one entry." },
+    );
+  }
+  const seenSourceIds = new Set<string>();
+  const sources = rawSources.map((entry, index) => {
+    const normalized = normalizeModelSourceConfig(entry, sourceLabel, index);
+    if (seenSourceIds.has(normalized.id)) {
+      throw new ConfigParseError(
+        `Duplicate model source '${normalized.id}' in ${sourceLabel}`,
+        { details: "Each source id must be unique." },
+      );
+    }
+    seenSourceIds.add(normalized.id);
+    return normalized;
+  });
 
-  if (sources.length === 0) {
-    return null;
+  if (defaultSource && !seenSourceIds.has(defaultSource)) {
+    throw new ConfigParseError(
+      `Unknown defaultSource '${defaultSource}' in ${sourceLabel}`,
+      { details: "defaultSource must match one of the configured source ids." },
+    );
   }
 
   return {
@@ -417,32 +423,7 @@ function parseModelSourceRegistryConfig(input: JsonValue): ModelSourceRegistryCo
   };
 }
 
-async function loadModelSourceRegistryFromFile(path: string): Promise<ModelSourceRegistryConfig | null> {
-  const file = Bun.file(path);
-  const exists = await file.exists();
-  if (!exists) {
-    return null;
-  }
-  const raw = await file.text();
-  const parsed = safeParseJson<JsonValue>(raw);
-  if (!parsed.ok) {
-    throw new ConfigParseError(
-      `Failed to parse model source registry JSON from file '${path}': ${parsed.error}`,
-      { details: parsed.error },
-    );
-  }
-
-  const normalized = parseModelSourceRegistryConfig(parsed.data);
-  if (!normalized) {
-    throw new ConfigParseError(
-      `Invalid model source registry payload in file '${path}'`,
-      { details: "Expected sources array with at least one entry" },
-    );
-  }
-  return normalized;
-}
-
-async function readModelSourceRegistryEnv(name: string): Promise<ModelSourceRegistryConfig | null> {
+function readModelSourceRegistryEnv(name: string): ModelSourceRegistryConfig | null {
   const raw = process.env[name];
   if (!raw) {
     return null;
@@ -452,112 +433,43 @@ async function readModelSourceRegistryEnv(name: string): Promise<ModelSourceRegi
   if (!parsed.ok) {
     throw new ConfigParseError(`Invalid JSON for ${name}: ${parsed.error}`, { details: parsed.error });
   }
-  const normalized = parseModelSourceRegistryConfig(parsed.data);
-  if (!normalized) {
-    throw new ConfigParseError(
-      `Invalid value for ${name}: expected model source config with non-empty sources`,
-      { details: "Expected sources array with at least one entry" },
-    );
-  }
-  return normalized;
+  return parseModelSourceRegistryConfig(parsed.data, name);
 }
 
-async function resolveModelSourceRegistry(
-  fallback: ModelSourceRegistryConfig,
-): Promise<ModelSourceRegistryConfig> {
-  const fromEnv = await readModelSourceRegistryEnv("MODEL_SOURCE_REGISTRY_JSON");
-  if (fromEnv && fromEnv.sources.length > 0) {
+function resolveModelSourceRegistry(): ModelSourceRegistryConfig {
+  const fromEnv = readModelSourceRegistryEnv("MODEL_SOURCE_REGISTRY_JSON");
+  if (fromEnv) {
     return fromEnv;
   }
-
-  const configDir = join(import.meta.dir, "..", "config");
-  const filePath = join(configDir, "model-sources.json");
-  const fromFile = await loadModelSourceRegistryFromFile(filePath);
-  if (fromFile && fromFile.sources.length > 0) {
-    return fromFile;
-  }
-
-  return fallback;
+  return parseModelSourceRegistryConfig(canonicalModelSourceRegistryJson, "control-plane/config/model-sources.json");
 }
 
-async function loadProviderRegistryFromFile(path: string): Promise<ProviderRegistryConfig[]> {
-  const file = Bun.file(path);
-  const exists = await file.exists();
-  if (!exists) {
-    return [];
-  }
-  const raw = await file.text();
-  const parsed = safeParseJson<JsonValue>(raw);
-  if (!parsed.ok) {
-    throw new ConfigParseError(
-      `Failed to parse provider registry JSON from file '${path}': ${parsed.error}`,
-      { details: parsed.error },
-    );
-  }
-  if (!Array.isArray(parsed.data)) {
-    throw new ConfigParseError(
-      `Invalid provider registry payload in file '${path}': expected JSON array`,
-      { details: "Expected JSON array" },
-    );
-  }
-
-  const filtered = parsed.data
-    .map((entry) => normalizeProviderConfig(entry))
-    .filter((entry): entry is ProviderRegistryConfig => entry !== null);
-  if (filtered.length === 0) {
-    return [];
-  }
-  return filtered;
-}
-
-async function readProviderRegistryEnv(name: string): Promise<ProviderRegistryConfig[] | null> {
+function readProviderRegistryEnv(name: string): ProviderRegistryConfig[] | null {
   const raw = process.env[name];
   if (raw) {
     const parsed = safeParseJson<JsonValue>(raw);
     if (!parsed.ok) {
       throw new ConfigParseError(`Invalid JSON for ${name}: ${parsed.error}`, { details: parsed.error });
     }
-    if (!Array.isArray(parsed.data)) {
-      throw new ConfigParseError(
-        `Invalid value for ${name}: expected JSON array of providers`,
-        { details: "Expected JSON array" },
-      );
-    }
-
-    const filtered = parsed.data
-      .map((entry) => normalizeProviderConfig(entry))
-      .filter((entry): entry is ProviderRegistryConfig => entry !== null);
-    if (filtered.length > 0) {
-      return filtered;
-    }
-    throw new ConfigParseError(`No valid provider entries found in ${name}`, { details: "No valid providers" });
+    return parseProviderRegistryConfig(parsed.data, name);
   }
   return null;
 }
 
-async function resolveProviderRegistry(fallback: readonly ProviderRegistryConfig[]): Promise<ProviderRegistryConfig[]> {
-  const fromEnv = await readProviderRegistryEnv("AI_PROVIDER_REGISTRY_JSON");
-  if (fromEnv && fromEnv.length > 0) {
+function resolveProviderRegistry(): ProviderRegistryConfig[] {
+  const fromEnv = readProviderRegistryEnv("AI_PROVIDER_REGISTRY_JSON");
+  if (fromEnv) {
     return fromEnv;
   }
-
-  const configDir = join(import.meta.dir, "..", "config");
-  const filePath = join(configDir, "providers.json");
-  const fromFile = await loadProviderRegistryFromFile(filePath);
-  if (fromFile.length > 0) {
-    return fromFile;
-  }
-
-  return [...fallback];
+  return parseProviderRegistryConfig(canonicalProviderRegistryJson, "control-plane/config/providers.json");
 }
 
-function isJsonRecord(value: JsonValue): value is JsonRecord {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function normalizeProviderConfig(input: JsonValue): ProviderRegistryConfig | null {
+function normalizeProviderConfig(input: JsonInput | undefined, sourceLabel: string, index: number): ProviderRegistryConfig {
   if (!isJsonRecord(input)) {
-    return null;
+    throw new ConfigParseError(
+      `Invalid provider registry entry at index ${index} in ${sourceLabel}`,
+      { details: "Each provider entry must be a JSON object." },
+    );
   }
   const id = toTrimmedString(input.id).toLowerCase();
   const displayName = toTrimmedString(input.displayName);
@@ -570,7 +482,10 @@ function normalizeProviderConfig(input: JsonValue): ProviderRegistryConfig | nul
     : [];
 
   if (!id || !displayName || !baseUrl || !docsUrl) {
-    return null;
+    throw new ConfigParseError(
+      `Invalid provider registry entry '${id || `index ${index}`}' in ${sourceLabel}`,
+      { details: "Provider entries require id, displayName, baseUrl, and docsUrl." },
+    );
   }
 
   const keyHint = typeof input.keyHint === "string" ? input.keyHint.trim() : undefined;
@@ -588,46 +503,34 @@ function normalizeProviderConfig(input: JsonValue): ProviderRegistryConfig | nul
   };
 }
 
-function toTrimmedString(value: JsonValue | undefined): string {
-  if (typeof value === "string") {
-    return value.trim();
+function parseProviderRegistryConfig(input: JsonInput | undefined, sourceLabel: string): ProviderRegistryConfig[] {
+  if (!Array.isArray(input)) {
+    throw new ConfigParseError(
+      `Invalid provider registry in ${sourceLabel}`,
+      { details: "Expected JSON array of providers." },
+    );
   }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return value.toString().trim();
+  if (input.length === 0) {
+    throw new ConfigParseError(
+      `Invalid provider registry in ${sourceLabel}`,
+      { details: "Provider registry must contain at least one provider." },
+    );
   }
-  return "";
+  const seenProviderIds = new Set<string>();
+  return input.map((entry, index) => {
+    const normalized = normalizeProviderConfig(entry, sourceLabel, index);
+    if (seenProviderIds.has(normalized.id)) {
+      throw new ConfigParseError(
+        `Duplicate provider '${normalized.id}' in ${sourceLabel}`,
+        { details: "Each provider id must be unique." },
+      );
+    }
+    seenProviderIds.add(normalized.id);
+    return normalized;
+  });
 }
 
-const MODEL_SOURCE_REGISTRY_FALLBACK: ModelSourceRegistryConfig = {
-  sources: [
-    {
-      id: "huggingface",
-      displayName: "Hugging Face",
-      description: "Remote models from huggingface.co repositories.",
-      modelRefPlaceholder: "owner/repo or huggingface.co/owner/repo",
-      modelRefHint: "Format: owner/repo or huggingface.co/owner/repo",
-      modelRefValidation: "huggingface",
-      canonicalHost: "huggingface.co",
-      ramalamaTransportPrefix: "huggingface://",
-      aliases: ["hf"],
-      enforceAllowlist: true,
-    },
-    {
-      id: "ollama",
-      displayName: "Ollama",
-      description: "Local/remote Ollama model library (for example llama3.2).",
-      modelRefPlaceholder: "llama3.2",
-      modelRefHint: "Use an Ollama model tag, for example llama3.2 or mistral:7b.",
-      modelRefValidation: "opaque",
-      ramalamaTransportPrefix: "ollama://",
-      aliases: [],
-      enforceAllowlist: false,
-    },
-  ],
-};
-const FALLBACK_MODEL_SOURCE_ID: ModelSource = MODEL_SOURCE_REGISTRY_FALLBACK.sources[0]?.id ?? "";
-
-const MODEL_SOURCE_REGISTRY_CONFIG = await resolveModelSourceRegistry(MODEL_SOURCE_REGISTRY_FALLBACK);
+const MODEL_SOURCE_REGISTRY_CONFIG = resolveModelSourceRegistry();
 
 function buildModelSourceRegistry(sources: readonly ModelSourceConfigInput[]): ModelSourceConfig[] {
   const seen = new Set<string>();
@@ -642,7 +545,7 @@ function buildModelSourceRegistry(sources: readonly ModelSourceConfigInput[]): M
       id,
       displayName: source.displayName.trim() || id,
       ...(source.description ? { description: source.description.trim() } : {}),
-      modelRefPlaceholder: source.modelRefPlaceholder?.trim() || "owner/repo",
+      modelRefPlaceholder: source.modelRefPlaceholder?.trim() || source.displayName.trim() || id,
       ...(source.modelRefHint ? { modelRefHint: source.modelRefHint.trim() } : {}),
       modelRefValidation: source.modelRefValidation,
       ...(source.canonicalHost ? { canonicalHost: source.canonicalHost.trim().toLowerCase() } : {}),
@@ -653,9 +556,12 @@ function buildModelSourceRegistry(sources: readonly ModelSourceConfigInput[]): M
       enforceAllowlist: source.enforceAllowlist === true,
     });
   }
-  return out.length > 0
-    ? out
-    : buildModelSourceRegistry(MODEL_SOURCE_REGISTRY_FALLBACK.sources);
+  if (out.length === 0) {
+    throw new ConfigParseError("Model source registry is empty", {
+      details: "At least one model source must be configured.",
+    });
+  }
+  return out;
 }
 
 /** Canonical model-source registry used by model pull forms and validation. */
@@ -697,11 +603,11 @@ function resolveDefaultModelSource(): ModelSource {
   if (fromRegistry) {
     return fromRegistry;
   }
-  const fallbackSource = MODEL_SOURCE_REGISTRY.at(0)?.id ?? FALLBACK_MODEL_SOURCE_ID;
-  if (fallbackSource) {
-    return fallbackSource;
+  const configuredSource = MODEL_SOURCE_REGISTRY.at(0)?.id;
+  if (!configuredSource) {
+    throw new ConfigParseError("Model source registry is empty", { details: "No model sources are configured." });
   }
-  throw new ConfigParseError("Model source registry is empty", { details: "No model sources are configured." });
+  return configuredSource;
 }
 
 /** Default model source for pull requests. */
@@ -747,27 +653,14 @@ export function getModelSourceValidationPolicy(source: string | null | undefined
   const config = resolveModelSourceConfig(source);
   return {
     mode: config.modelRefValidation,
-    canonicalHost: config.canonicalHost,
+    ...(config.canonicalHost ? { canonicalHost: config.canonicalHost } : {}),
   };
 }
 
-/** Minimal fallback when config/providers.json is missing and AI_PROVIDER_REGISTRY_JSON is unset. */
-const PROVIDER_REGISTRY_FALLBACK: ProviderRegistryConfig[] = [
-  {
-    id: "ollama",
-    displayName: "Ollama",
-    baseUrl: "http://localhost:11434",
-    requiresKey: false,
-    defaultModels: [],
-    docsUrl: "https://github.com/ollama/ollama/blob/main/docs/api.md",
-  },
-];
+/** Default AI provider registry. Loaded from control-plane/config/providers.json at startup; overridden by AI_PROVIDER_REGISTRY_JSON env. */
+export const PROVIDER_REGISTRY = resolveProviderRegistry();
 
-/** Default AI provider registry. Loaded from config/providers.json at startup; overridden by AI_PROVIDER_REGISTRY_JSON env. */
-export const PROVIDER_REGISTRY = await resolveProviderRegistry(PROVIDER_REGISTRY_FALLBACK);
-
-const MODEL_PULL_PRESET_CONFIG_PATH = join(import.meta.dir, "..", "config", "model-pull-presets.json");
-const MODEL_PULL_PRESET_CONFIG = await readModelPullPresetFile(MODEL_PULL_PRESET_CONFIG_PATH);
+const MODEL_PULL_PRESET_CONFIG = parseModelPullPresetConfig(canonicalModelPullPresetConfigJson);
 
 /** Fallback model presets for pull UI and default model preference values. */
 export const MODEL_PULL_PRESETS = readStringArrayEnv("MODEL_PULL_PRESETS", MODEL_PULL_PRESET_CONFIG.presets);
@@ -779,6 +672,55 @@ export const MODEL_PULL_MODEL_REF_PLACEHOLDER = readStringEnv(
   "MODEL_PULL_MODEL_REF_PLACEHOLDER",
   MODEL_PULL_PRESET_CONFIG.modelRefPlaceholder || DEFAULT_MODEL_SOURCE_PLACEHOLDER,
 );
+
+const DEVICE_AI_PROFILE_CONFIG = await readDeviceAiProfileFile(DEVICE_AI_PROFILE_CONFIG_PATH);
+
+/** Required model reference for device AI protocol runs. */
+export const VERTU_REQUIRED_MODEL_REF = readStringEnv(
+  "VERTU_REQUIRED_MODEL_REF",
+  DEVICE_AI_PROFILE_CONFIG.requiredModelRef || MODEL_PULL_PRESET_DEFAULT,
+);
+
+/** Required revision pin for device AI protocol model pulls. */
+export const VERTU_REQUIRED_MODEL_REVISION = readStringEnv(
+  "VERTU_REQUIRED_MODEL_REVISION",
+  DEVICE_AI_PROFILE_CONFIG.revision,
+);
+
+/** Required model file for device AI protocol downloads. */
+export const VERTU_REQUIRED_MODEL_FILE = readStringEnv(
+  "VERTU_REQUIRED_MODEL_FILE",
+  DEVICE_AI_PROFILE_CONFIG.requiredModelFile,
+);
+
+/** Required model SHA-256 for device AI protocol downloads. */
+export const VERTU_REQUIRED_MODEL_SHA256 = readStringEnv(
+  "VERTU_REQUIRED_MODEL_SHA256",
+  DEVICE_AI_PROFILE_CONFIG.requiredModelSha256,
+);
+
+/** Timeout budget in milliseconds for device AI protocol stages. */
+export const VERTU_DEVICE_AI_PROTOCOL_TIMEOUT_MS = readPositiveIntEnv(
+  "VERTU_DEVICE_AI_PROTOCOL_TIMEOUT_MS",
+  DEVICE_AI_PROFILE_CONFIG.protocolTimeoutMs,
+);
+
+/** Maximum age (minutes) accepted by device AI readiness audit for latest report. */
+export const VERTU_DEVICE_AI_REPORT_MAX_AGE_MINUTES = readPositiveIntEnv(
+  "VERTU_DEVICE_AI_REPORT_MAX_AGE_MINUTES",
+  DEVICE_AI_PROFILE_CONFIG.reportMaxAgeMinutes,
+);
+
+/** Effective device AI protocol profile after env overrides are applied. */
+export const DEVICE_AI_PROTOCOL_PROFILE: DeviceAiProtocolProfile = {
+  ...DEVICE_AI_PROFILE_CONFIG,
+  requiredModelRef: VERTU_REQUIRED_MODEL_REF,
+  revision: VERTU_REQUIRED_MODEL_REVISION,
+  requiredModelFile: VERTU_REQUIRED_MODEL_FILE,
+  requiredModelSha256: VERTU_REQUIRED_MODEL_SHA256,
+  protocolTimeoutMs: VERTU_DEVICE_AI_PROTOCOL_TIMEOUT_MS,
+  reportMaxAgeMinutes: VERTU_DEVICE_AI_REPORT_MAX_AGE_MINUTES,
+};
 
 /** Configurable model source options for pull request forms. */
 export const MODEL_PULL_SOURCES = (() => {
@@ -798,9 +740,6 @@ export const MODEL_PULL_SOURCES = (() => {
   return deduped.length > 0 ? deduped : [DEFAULT_MODEL_SOURCE];
 })();
 
-/** Legacy alias retained for compatibility with existing render paths. */
-export const AUTOGLM_MODEL_PRESETS: readonly string[] = MODEL_PULL_PRESETS;
-
 const configuredChatModel = readStringEnv("DEFAULT_CHAT_MODEL", "");
 const configuredPullModel = readStringEnv("DEFAULT_CHAT_PULL_MODEL", "");
 const configuredFlowRunAttempts = readStringEnv("FLOW_RUN_MAX_ATTEMPTS", "");
@@ -810,8 +749,10 @@ const configuredFlowRunRetryDelay = readStringEnv("FLOW_RUN_RETRY_DELAY_MS", "")
 /** Fallback theme used by initial DB bootstrap and UI hydration. */
 export const DEFAULT_THEME = "dark";
 
-/** Supported theme preferences. */
-export const SUPPORTED_THEMES = ["dark", "light", "luxury"] as const;
+/** Supported theme preferences — Vertu-branded themes only. */
+export const SUPPORTED_THEMES = [
+  "dark", "light", "luxury",
+] as const;
 
 /** Default pull target used by `/api/models/pull` when no modelRef is supplied. */
 export const DEFAULT_CHAT_PULL_MODEL = configuredPullModel.length > 0
@@ -839,17 +780,34 @@ export const DEFAULT_CHAT_MODEL = configuredChatModel.length > 0
   : deriveDefaultChatModel(PROVIDER_REGISTRY);
 
 function deriveDefaultChatModel(providerRegistry: readonly ProviderRegistryConfig[]): string {
+  // Prioritize the default model source (e.g. "huggingface" from model-sources.json)
+  const defaultSourceId = MODEL_SOURCE_REGISTRY_CONFIG.defaultSource?.toLowerCase();
+  if (defaultSourceId) {
+    const matchingProvider = providerRegistry.find((p) => p.id.toLowerCase() === defaultSourceId);
+    const sourceModel = matchingProvider?.defaultModels.at(0)?.trim();
+    if (sourceModel) return sourceModel;
+  }
   for (const provider of providerRegistry) {
-    const fallback = provider.defaultModels.at(0)?.trim();
-    if (fallback) {
-      return fallback;
+    const configuredDefaultModel = provider.defaultModels.at(0)?.trim();
+    if (configuredDefaultModel) {
+      return configuredDefaultModel;
     }
   }
-  return SAFE_DEFAULT_CHAT_MODEL;
+  throw new ConfigParseError("No provider default models are configured", {
+    details: "Configure at least one defaultModels entry in control-plane/config/providers.json or set DEFAULT_CHAT_MODEL.",
+  });
 }
 
 /** Default Ollama API base URL used when no provider override is configured. */
-export const OLLAMA_DEFAULT_BASE_URL = readStringEnv("OLLAMA_DEFAULT_BASE_URL", "http://localhost:11434");
+export const OLLAMA_DEFAULT_BASE_URL = readStringEnv(
+  "OLLAMA_DEFAULT_BASE_URL",
+  PROVIDER_REGISTRY.find((provider) => provider.id === "ollama")?.baseUrl.trim()
+    ?? (() => {
+      throw new ConfigParseError("Ollama provider is not configured", {
+        details: "Configure an 'ollama' entry in control-plane/config/providers.json or set OLLAMA_DEFAULT_BASE_URL.",
+      });
+    })(),
+);
 
 /** OpenRouter referer header used for request attribution. */
 export const OPENROUTER_HTTP_REFERER = readStringEnv("OPENROUTER_HTTP_REFERER", "https://vertu-edge.local");
@@ -859,6 +817,113 @@ export const OPENROUTER_APP_TITLE = readStringEnv("OPENROUTER_APP_TITLE", "Vertu
 
 /** Timeout for UCP discovery fetch calls. */
 export const UCP_DISCOVERY_TIMEOUT_MS = readPositiveIntEnv("UCP_DISCOVERY_TIMEOUT_MS", 5_000);
+
+/** Maximum retry attempts for outbound AI HTTP requests after the initial attempt. */
+export const AI_HTTP_MAX_RETRIES = readPositiveIntEnv("AI_HTTP_MAX_RETRIES", 2);
+
+/** Initial retry backoff delay (ms) for outbound AI HTTP requests. */
+export const AI_HTTP_RETRY_BASE_DELAY_MS = readPositiveIntEnv("AI_HTTP_RETRY_BASE_DELAY_MS", 250);
+
+/** Maximum retry backoff delay (ms) for outbound AI HTTP requests. */
+export const AI_HTTP_RETRY_MAX_DELAY_MS = readPositiveIntEnv("AI_HTTP_RETRY_MAX_DELAY_MS", 2_000);
+
+/** Timeout for reading response body after HTTP response headers arrive (ms). */
+export const RESPONSE_BODY_READ_TIMEOUT_MS = readPositiveIntEnv("AI_RESPONSE_BODY_READ_TIMEOUT_MS", 30_000);
+
+/** SSE log stream poll interval between batches (ms). */
+export const SSE_POLL_INTERVAL_MS = 500;
+
+/** Delay before auto-triggering provider validation on page load (ms). */
+export const AUTO_VALIDATION_DELAY_MS = 100;
+
+/** Maximum length for user-entered model identifiers. */
+export const MODEL_IDENTIFIER_MAX_LENGTH = 256;
+
+/** Maximum display length for sanitized API error messages. */
+export const ERROR_DISPLAY_MAX_LENGTH = 120;
+
+/** Truncation suffix offset for display errors (max - offset = slice point). */
+export const ERROR_DISPLAY_TRUNCATION_OFFSET = 3;
+
+/** Error message when OpenAI-compatible response has no content. */
+export const AI_CHAT_NO_CONTENT_ERROR = "No content in response" as const;
+
+/** Error message when Anthropic response has no text block. */
+export const AI_ANTHROPIC_NO_TEXT_ERROR = "No text content in Anthropic response" as const;
+
+/** Success message for image generation results. */
+export const AI_IMAGE_GENERATED_MESSAGE = "Image generated successfully." as const;
+
+/** Maximum number of in-memory cached job results (flow runs + workflow results). */
+export const MAX_CACHED_JOB_RESULTS = 500;
+
+/** Maximum number of conversation history messages to include in multi-turn chat context. */
+export const MAX_CONVERSATION_HISTORY_MESSAGES = 20;
+
+/** Starter flow templates for the saved flows library. */
+export const FLOW_TEMPLATES: ReadonlyArray<{ name: string; description: string; yaml: string }> = [
+  {
+    name: "Tap element by text",
+    description: "Tap an element identified by its visible text label.",
+    yaml: `appId: com.example.app
+---
+- tapOn:
+    text: "Submit"
+`,
+  },
+  {
+    name: "Scroll and assert",
+    description: "Scroll down and verify an element is visible.",
+    yaml: `appId: com.example.app
+---
+- scroll
+- assertVisible:
+    text: "Welcome"
+`,
+  },
+  {
+    name: "Launch and navigate",
+    description: "Launch an app and navigate through multiple screens.",
+    yaml: `appId: com.example.app
+---
+- launchApp
+- tapOn:
+    text: "Settings"
+- tapOn:
+    text: "Account"
+`,
+  },
+  {
+    name: "Screenshot test",
+    description: "Take a screenshot for visual regression testing.",
+    yaml: `appId: com.example.app
+---
+- launchApp
+- takeScreenshot: "home_screen"
+`,
+  },
+];
+
+/** Output directory for persisted AI workflow artifacts. */
+export const AI_WORKFLOW_ARTIFACT_DIR = readStringEnv(
+  "AI_WORKFLOW_ARTIFACT_DIR",
+  join(import.meta.dir, "..", "artifacts", "ai-workflows"),
+);
+
+/** Default image model for local Ollama image generation path. */
+export const AI_WORKFLOW_LOCAL_IMAGE_MODEL = readStringEnv("AI_WORKFLOW_LOCAL_IMAGE_MODEL", "gpt-image");
+
+/** Default image model for Hugging Face fallback path. */
+export const AI_WORKFLOW_HF_IMAGE_MODEL = readStringEnv(
+  "AI_WORKFLOW_HF_IMAGE_MODEL",
+  "black-forest-labs/FLUX.1-schnell",
+);
+
+/** Base URL for Hugging Face image generation fallback requests. */
+export const AI_WORKFLOW_HF_IMAGE_BASE_URL = readStringEnv(
+  "AI_WORKFLOW_HF_IMAGE_BASE_URL",
+  "https://api-inference.huggingface.co/models",
+);
 
 /** Resolve the control-plane listen port from environment variables with hardening. */
 export function resolveControlPlanePort(): number {

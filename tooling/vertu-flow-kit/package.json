@@ -11,12 +11,20 @@
     "lint": "bunx eslint .",
     "lint:fix": "bunx eslint . --fix",
     "test": "bun test",
+    "bootstrap": "bun src/cli.ts bootstrap",
+    "build:matrix": "bun src/cli.ts build matrix",
+    "device-ai:download-model": "bun src/cli.ts device-ai download-model",
+    "verify:all": "bun src/cli.ts verify all",
+    "verify:smoke-control-plane": "bun src/cli.ts verify smoke-control-plane",
     "validate": "bun src/cli.ts validate ../../contracts/fixtures/contact-flow.yaml",
     "validate-model-manifest": "bun src/cli.ts validate-model-manifest ../../model_allowlist.json",
+    "validate-device-ai-profile": "bun src/cli.ts validate-device-ai-profile ../../control-plane/config/device-ai-profile.json",
+    "validate-device-ai-report": "bun src/cli.ts validate-device-ai-report ../../contracts/fixtures/device-ai-report.json",
     "doctor": "bun src/cli.ts doctor"
   },
   "dependencies": {
     "ajv": "8.18.0",
+    "ajv-formats": "3.0.1",
     "yaml": "2.8.2"
   },
   "devDependencies": {

@@ -1,4 +1,4 @@
-import { join, resolve, sep } from "path";
+import { join, resolve, sep } from "node:path";
 import { mkdir } from "node:fs/promises";
 import {
   DEFAULT_JOB_TIMEOUT_MS,
@@ -7,26 +7,44 @@ import {
   type BuildKind,
   type BuildType,
   createFlowCapabilityError,
+  isAppBuildFailureCode,
   isSupportedBuildKind,
+  isSupportedBuildType,
+  isSupportedDesktopBuildVariant,
 } from "../../contracts/flow-contracts";
 import {
   APP_BUILD_CANCELLED_MESSAGE,
+  APP_BUILD_ANDROID_JAVA_MISSING_REASON,
+  APP_BUILD_DESKTOP_BUN_MISSING_REASON,
+  APP_BUILD_DESKTOP_UNSUPPORTED_VARIANT_REASON,
+  APP_BUILD_EXECUTION_FAILED_REASON,
   APP_BUILD_FAILURE_FALLBACK_MESSAGE,
   APP_BUILD_IOS_MAC_ONLY_REASON,
   APP_BUILD_IOS_SCHEME_MISSING_REASON,
   APP_BUILD_IOS_SCHEME_NOT_FOUND_REASON,
   APP_BUILD_IOS_TOOLING_MISSING_REASON,
   APP_BUILD_JOB_PAYLOAD_INVALID_REASON,
+  APP_BUILD_OUTPUT_DIR_INVALID_REASON,
   APP_BUILD_OUTPUT_DIR_TRAVERSE_REASON,
+  APP_BUILD_SCRIPT_MISSING_REASON,
   APP_BUILD_RESUMED_MESSAGE,
   APP_BUILD_SUCCESS_MESSAGE,
   APP_BUILD_UNSUPPORTED_BUILD_TYPE_REASON,
   APP_BUILD_UNSUPPORTED_PLATFORM_REASON,
   DEFAULT_BUILD_TYPE,
-  SUPPORTED_BUILD_TYPES,
+  SUPPORTED_DESKTOP_BUILD_VARIANTS,
 } from "./config";
+import {
+  appendAppBuildFailureMetadata,
+  createAppBuildFailureError,
+  type AppBuildFailureMetadata,
+} from "../../shared/app-build-failures";
+import {
+  commandExists,
+  listIosSchemes,
+  resolveJava21Home,
+} from "../../shared/host-tooling";
 
-const SUPPORTED_BUILD_TYPES_SET = new Set<string>(SUPPORTED_BUILD_TYPES);
 import {
   appendCapabilityJobEvent,
   createCapabilityJob,
@@ -34,13 +52,18 @@ import {
   listCapabilityJobEvents,
   updateCapabilityJob,
 } from "./db";
+import { resolveDefaultDesktopBuildVariant } from "../../shared/app-build";
 import {
   buildAppBuildEnvelope,
   parseAppBuildPayload,
   serializeAppBuildPayload,
   type AppBuildJobPayload,
 } from "./model-jobs";
-import { APP_BUILD_ROUTE, RUN_ANDROID_BUILD_SCRIPT, RUN_IOS_BUILD_SCRIPT } from "./runtime-constants";
+import {
+  APP_BUILD_ROUTE,
+  FLOW_KIT_CLI_RELATIVE,
+  FLOW_KIT_DIRECTORY_RELATIVE,
+} from "./runtime-constants";
 import { parseArtifactMetadata, verifyArtifactMetadata } from "./artifact-metadata";
 import { AppBuildExecutionError } from "./errors";
 
@@ -88,8 +111,8 @@ export function getAppBuildJobEnvelope(jobId: string): AppBuildEnvelope {
 }
 
 /** Return structured build log events for polling/SSE routes. */
-export function getAppBuildJobLogEvents(jobId: string, afterEventId?: string | null): import("./db").CapabilityJobEventRecord[] {
-  return listCapabilityJobEvents(jobId, afterEventId);
+export function getAppBuildJobLogEvents(jobId: string, afterCursor?: string | null): import("./db").CapabilityJobEventRecord[] {
+  return listCapabilityJobEvents(jobId, afterCursor);
 }
 
 /** Cancel a running app build job and mark terminal state. */
@@ -163,24 +186,22 @@ export function resumeAppBuildJob(jobId: string): AppBuildEnvelope {
 async function buildValidatedBuildPayload(request: AppBuildRequest): Promise<AppBuildJobPayload> {
   const platform = request.platform;
   if (!isSupportedBuildKind(platform)) {
-    throw createFlowCapabilityError({
-      commandIndex: -1,
+    throw createAppBuildFailureError({
+      code: "app_build_unsupported_platform",
       command: "platform",
+      category: "validation",
       reason: `${APP_BUILD_UNSUPPORTED_PLATFORM_REASON} '${platform}'.`,
-      retryable: false,
-      surface: "app_build",
       resource: platform,
     });
   }
 
   const buildType = request.buildType ?? DEFAULT_BUILD_TYPE;
   if (!isBuildTypeValue(buildType)) {
-    throw createFlowCapabilityError({
-      commandIndex: -1,
+    throw createAppBuildFailureError({
+      code: "app_build_unsupported_build_type",
       command: "buildType",
+      category: "validation",
       reason: `${APP_BUILD_UNSUPPORTED_BUILD_TYPE_REASON} '${buildType}'.`,
-      retryable: false,
-      surface: "app_build",
       resource: buildType,
     });
   }
@@ -190,10 +211,25 @@ async function buildValidatedBuildPayload(request: AppBuildRequest): Promise<App
     await validateWritableOutputDir(outputDir);
   }
 
+  const requestedVariant = request.variant?.trim();
+  const resolvedVariant =
+    platform === "desktop"
+      ? requestedVariant || resolveDefaultDesktopBuildVariant(process.platform, process.arch) || undefined
+      : requestedVariant;
+  if (platform === "desktop" && !resolvedVariant) {
+    throw createAppBuildFailureError({
+      code: "app_build_desktop_variant_unsupported",
+      command: "variant",
+      category: "validation",
+      reason: `${APP_BUILD_DESKTOP_UNSUPPORTED_VARIANT_REASON} '${process.platform}/${process.arch}'. Supported: ${SUPPORTED_DESKTOP_BUILD_VARIANTS.join(", ")}`,
+      resource: `${process.platform}/${process.arch}`,
+    });
+  }
+
   return {
     platform,
     buildType,
-    variant: request.variant?.trim(),
+    variant: resolvedVariant,
     skipTests: request.skipTests === true,
     outputDir,
     clean: request.clean === true,
@@ -202,162 +238,83 @@ async function buildValidatedBuildPayload(request: AppBuildRequest): Promise<App
 }
 
 function isBuildTypeValue(value: string): value is BuildType {
-  return SUPPORTED_BUILD_TYPES_SET.has(value);
+  return isSupportedBuildType(value);
 }
 
 async function validateBuildTooling(platform: BuildKind, requestedVariant?: string): Promise<void> {
   if (platform === "android") {
-    validateBinary("java", "Java runtime");
+    const java21Home = await resolveJava21Home(process.env);
+    if (!java21Home && !commandExists("brew", process.env)) {
+      throw createAppBuildFailureError({
+        code: "app_build_android_java_missing",
+        command: "java",
+        reason: APP_BUILD_ANDROID_JAVA_MISSING_REASON,
+        resource: "java",
+      });
+    }
+    return;
+  }
+
+  if (platform === "desktop") {
+    if (!commandExists("bun", process.env)) {
+      throw createAppBuildFailureError({
+        code: "app_build_desktop_bun_missing",
+        command: "bun",
+        reason: APP_BUILD_DESKTOP_BUN_MISSING_REASON,
+        resource: "bun",
+      });
+    }
+    if (requestedVariant && !isSupportedDesktopBuildVariant(requestedVariant)) {
+      throw createAppBuildFailureError({
+        code: "app_build_desktop_variant_unsupported",
+        command: "variant",
+        category: "validation",
+        reason: `${APP_BUILD_DESKTOP_UNSUPPORTED_VARIANT_REASON} '${requestedVariant}'. Supported: ${SUPPORTED_DESKTOP_BUILD_VARIANTS.join(", ")}`,
+        resource: requestedVariant,
+      });
+    }
     return;
   }
 
   if (platform === "ios") {
     if (process.platform !== "darwin") {
-      throw createFlowCapabilityError({
-        commandIndex: -1,
+      throw createAppBuildFailureError({
+        code: "app_build_ios_mac_only",
         command: "platform",
         reason: APP_BUILD_IOS_MAC_ONLY_REASON,
-        retryable: false,
-        surface: "app_build",
         resource: platform,
       });
     }
 
-    const hasXcodeBuildTools = commandExists("xcodebuild");
-    if (!hasXcodeBuildTools) {
-      throw createFlowCapabilityError({
-        commandIndex: -1,
+    const iosDirectory = resolve(import.meta.dir, "..", "..", "iOS", "VertuEdge");
+    const schemeListing = await listIosSchemes(iosDirectory, process.env);
+    if (!schemeListing.ok) {
+      if (schemeListing.error.code === "project_container_missing" || schemeListing.error.code === "schemes_missing") {
+        throw createAppBuildFailureError({
+          code: "app_build_ios_scheme_missing",
+          command: "platform",
+          reason: APP_BUILD_IOS_SCHEME_MISSING_REASON,
+          resource: iosDirectory,
+        });
+      }
+      throw createAppBuildFailureError({
+        code: "app_build_ios_tooling_missing",
         command: "platform",
         reason: APP_BUILD_IOS_TOOLING_MISSING_REASON,
-        retryable: false,
-        surface: "app_build",
-        resource: platform,
+        resource: "xcodebuild",
       });
     }
 
-    await validateIosSchemeAvailability(requestedVariant);
-  }
-}
-
-function validateBinary(command: string, label: string): void {
-  const ok = commandExists(command);
-  if (!ok) {
-    throw createFlowCapabilityError({
-      commandIndex: -1,
-      command,
-      reason: `${label} is not available.`,
-      retryable: false,
-      surface: "app_build",
-      resource: command,
-    });
-  }
-}
-
-/**
- * Check whether a system command is available on PATH.
- * Uses `Bun.which()` for consistency with flow-engine.ts and app.ts,
- * replacing the previous custom synchronous PATH-scan implementation.
- */
-function commandExists(command: string): boolean {
-  return Bun.which(command) !== null;
-}
-
-async function validateIosSchemeAvailability(requestedVariant?: string): Promise<void> {
-  const iosDir = resolve(import.meta.dir, "..", "..", "iOS", "VertuEdge");
-  const workspacePath = resolve(iosDir, "VertuEdge.xcworkspace");
-  const projectPath = resolve(iosDir, "VertuEdge.xcodeproj");
-  const listArgs: string[] = [];
-
-  if (await Bun.file(workspacePath).exists()) {
-    listArgs.push("-list", "-workspace", workspacePath);
-  } else if (await Bun.file(projectPath).exists()) {
-    listArgs.push("-list", "-project", projectPath);
-  } else {
-    throw createFlowCapabilityError({
-      commandIndex: -1,
-      command: "platform",
-      reason: APP_BUILD_IOS_SCHEME_MISSING_REASON,
-      retryable: false,
-      surface: "app_build",
-      resource: iosDir,
-    });
-  }
-
-  const schemeListing = Bun.spawnSync(["xcodebuild", ...listArgs], {
-    cwd: iosDir,
-    stdout: "pipe",
-    stderr: "pipe",
-    timeout: DEFAULT_JOB_TIMEOUT_MS,
-    killSignal: "SIGKILL",
-  });
-
-  if (schemeListing.exitCode !== 0) {
-    throw createFlowCapabilityError({
-      commandIndex: -1,
-      command: "platform",
-      reason: APP_BUILD_IOS_TOOLING_MISSING_REASON,
-      retryable: false,
-      surface: "app_build",
-      resource: "xcodebuild",
-    });
-  }
-
-  const outputText = new TextDecoder().decode(schemeListing.stdout ?? new Uint8Array());
-  const schemes = parseXcodeSchemeNames(outputText);
-  if (schemes.length === 0) {
-    throw createFlowCapabilityError({
-      commandIndex: -1,
-      command: "platform",
-      reason: APP_BUILD_IOS_SCHEME_MISSING_REASON,
-      retryable: false,
-      surface: "app_build",
-      resource: "xcodebuild",
-    });
-  }
-
-  if (requestedVariant) {
-    const hasRequestedScheme = schemes.includes(requestedVariant);
-    if (!hasRequestedScheme) {
-      throw createFlowCapabilityError({
-        commandIndex: -1,
+    if (requestedVariant && !schemeListing.data.schemes.includes(requestedVariant)) {
+      throw createAppBuildFailureError({
+        code: "app_build_ios_scheme_not_found",
         command: "variant",
+        category: "validation",
         reason: `${APP_BUILD_IOS_SCHEME_NOT_FOUND_REASON} '${requestedVariant}'.`,
-        retryable: false,
-        surface: "app_build",
         resource: requestedVariant,
       });
     }
   }
-}
-
-function parseXcodeSchemeNames(output: string): string[] {
-  const lines = output.split(/\r?\n/);
-  let inSchemes = false;
-  const schemes: string[] = [];
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (line === "Schemes:") {
-      inSchemes = true;
-      continue;
-    }
-    if (!inSchemes) {
-      continue;
-    }
-    if (line.length === 0) {
-      continue;
-    }
-    if (line.endsWith(":")) {
-      break;
-    }
-
-    const normalized = line.startsWith("- ") ? line.slice(2).trim() : line.startsWith("-") ? line.slice(1).trim() : line;
-    if (normalized.length > 0) {
-      schemes.push(normalized);
-    }
-  }
-
-  return schemes;
 }
 
 async function validateWritableOutputDir(outputDir: string): Promise<void> {
@@ -373,17 +330,26 @@ async function validateWritableOutputDir(outputDir: string): Promise<void> {
   // allowed base is /foo.
   const allowedBase = cwd.endsWith(sep) ? cwd : cwd + sep;
   if (!normalized.startsWith(allowedBase) && normalized !== cwd) {
-    throw createFlowCapabilityError({
-      commandIndex: -1,
+    throw createAppBuildFailureError({
+      code: "app_build_output_dir_invalid",
       command: "outputDir",
+      category: "validation",
       reason: APP_BUILD_OUTPUT_DIR_TRAVERSE_REASON,
-      retryable: false,
-      surface: "app_build",
       resource: outputDir,
     });
   }
 
-  await mkdir(normalized, { recursive: true });
+  try {
+    await mkdir(normalized, { recursive: true });
+  } catch {
+    throw createAppBuildFailureError({
+      code: "app_build_output_dir_invalid",
+      command: "outputDir",
+      category: "validation",
+      reason: APP_BUILD_OUTPUT_DIR_INVALID_REASON,
+      resource: outputDir,
+    });
+  }
 }
 
 /** Execute a background build job and persist lifecycle state. */
@@ -395,18 +361,23 @@ async function executeAppBuildJob(jobId: string, payload: AppBuildJobPayload): P
     message: `Build started for ${payload.platform} (${payload.buildType})`,
   });
 
-  const repoRoot = resolve(import.meta.dir, "..");
-  const scriptName = payload.platform === "android" ? RUN_ANDROID_BUILD_SCRIPT : RUN_IOS_BUILD_SCRIPT;
-  const script = join(repoRoot, "..", "scripts", scriptName);
-  if (!(await Bun.file(script).exists())) {
-    throw new AppBuildExecutionError(`Build script not found: ${script}`, { retryable: false, details: script });
-  }
+  const repoRoot = resolve(import.meta.dir, "..", "..");
+  const flowKitDir = join(repoRoot, FLOW_KIT_DIRECTORY_RELATIVE);
+  const flowKitCli = join(repoRoot, FLOW_KIT_CLI_RELATIVE);
   const args = buildScriptArgs(payload);
   const env = buildBuildScriptEnvironment(payload.correlationId);
 
   try {
-    const proc = Bun.spawn([script, ...args], {
-      cwd: repoRoot,
+    if (!(await Bun.file(flowKitCli).exists())) {
+      throw createAppBuildFailureError({
+        code: "app_build_script_missing",
+        command: "vertu-flow",
+        reason: APP_BUILD_SCRIPT_MISSING_REASON,
+        resource: flowKitCli,
+      });
+    }
+    const proc = Bun.spawn([process.execPath, "src/cli.ts", "build", payload.platform, ...args], {
+      cwd: flowKitDir,
       env,
       stdout: "pipe",
       stderr: "pipe",
@@ -441,6 +412,13 @@ async function executeAppBuildJob(jobId: string, payload: AppBuildJobPayload): P
     });
     activeBuildProcesses.delete(jobId);
   } catch (failure) {
+    const metadata = failure instanceof Error
+      ? resolveAppBuildFailureMetadata(failure)
+      : typeof failure === "string" || typeof failure === "number" || typeof failure === "boolean" || failure === null || failure === undefined
+        ? resolveAppBuildFailureMetadata(failure)
+        : typeof failure === "object"
+          ? resolveAppBuildFailureMetadata(failure as BuildFailureDetails)
+          : null;
     const failureMessage = failure instanceof Error
       ? normalizeFailureMessage(failure)
       : typeof failure === "string" || typeof failure === "number" || typeof failure === "boolean"
@@ -455,7 +433,7 @@ async function executeAppBuildJob(jobId: string, payload: AppBuildJobPayload): P
     updateCapabilityJob(jobId, {
       status: "failed",
       stdout: "",
-      stderr: failureMessage,
+      stderr: metadata ? appendAppBuildFailureMetadata(failureMessage, metadata) : failureMessage,
       exitCode: 1,
       artifactPath: null,
       endedAt: new Date().toISOString(),
@@ -468,11 +446,60 @@ async function executeAppBuildJob(jobId: string, payload: AppBuildJobPayload): P
   }
 }
 
+function resolveAppBuildFailureMetadata(failure: BuildFailure | BuildFailureDetails): AppBuildFailureMetadata | null {
+  if (
+    typeof failure === "object"
+    && failure !== null
+    && "code" in failure
+    && typeof failure.code === "string"
+  ) {
+    const code = failure.code;
+    if (isAppBuildFailureCode(code)) {
+      return {
+        code,
+        message: "reason" in failure && typeof failure.reason === "string" ? failure.reason : APP_BUILD_EXECUTION_FAILED_REASON,
+      };
+    }
+  }
+
+  if (failure instanceof AppBuildExecutionError) {
+    return {
+      code: "app_build_execution_failed",
+      message: failure.message,
+    };
+  }
+
+  if (failure instanceof Error) {
+    return {
+      code: "app_build_execution_failed",
+      message: failure.message,
+    };
+  }
+
+  if (typeof failure === "string" || typeof failure === "number" || typeof failure === "boolean") {
+    return {
+      code: "app_build_execution_failed",
+      message: normalizeFailureMessage(failure),
+    };
+  }
+
+  if (
+    typeof failure === "object"
+    && failure !== null
+    && "message" in failure
+    && typeof failure.message === "string"
+  ) {
+    return {
+      code: "app_build_execution_failed",
+      message: failure.message,
+    };
+  }
+
+  return null;
+}
+
 function buildScriptArgs(payload: AppBuildJobPayload): string[] {
-  const args: string[] = [
-    `--platform=${payload.platform}`,
-    `--build-type=${payload.buildType}`,
-  ];
+  const args: string[] = [`--build-type=${payload.buildType}`];
 
   if (payload.variant) {
     args.push(`--variant=${payload.variant}`);
@@ -522,6 +549,24 @@ async function findBuildArtifact(platform: BuildKind, stdout: string, stderr: st
     }
   }
 
+  if (platform === "desktop") {
+    const distRoot = resolve(import.meta.dir, "..", "dist");
+    // Desktop builds emit ARTIFACT_PATH from the script; if not found, probe dist/ for known naming patterns.
+    const candidates = [
+      "vertu-cp-darwin-arm64",
+      "vertu-cp-darwin-x64",
+      "vertu-cp-linux-x64",
+      "vertu-cp-linux-arm64",
+      "vertu-cp-windows-x64.exe",
+    ];
+    for (const candidate of candidates) {
+      const candidatePath = join(distRoot, candidate);
+      if (await Bun.file(candidatePath).exists()) {
+        return candidatePath;
+      }
+    }
+  }
+
   return null;
 }
 
@@ -533,6 +578,12 @@ type BuildFailure =
   | boolean
   | null
   | undefined;
+
+type BuildFailureDetails = {
+  readonly code?: string;
+  readonly reason?: string;
+  readonly message?: string;
+};
 
 function normalizeFailureMessage(value: BuildFailure): string {
   if (value instanceof Error) {

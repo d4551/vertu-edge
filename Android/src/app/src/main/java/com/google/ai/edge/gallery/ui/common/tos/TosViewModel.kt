@@ -20,27 +20,51 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.ai.edge.gallery.data.DataStoreRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 
 /** ViewModel responsible for managing terms of services related tasks. */
 @HiltViewModel
 open class TosViewModel @Inject constructor(private val dataStoreRepository: DataStoreRepository) :
   ViewModel() {
+  private val _isTosAccepted = MutableStateFlow(false)
+  val isTosAccepted = _isTosAccepted.asStateFlow()
+  private val _isGemmaTermsOfUseAccepted = MutableStateFlow(false)
+  val isGemmaTermsOfUseAccepted = _isGemmaTermsOfUseAccepted.asStateFlow()
+
+  init {
+    refreshAcceptanceState()
+  }
+
   fun getIsTosAccepted(): Boolean {
-    return runBlocking { dataStoreRepository.isTosAccepted() }
+    return _isTosAccepted.value
   }
 
   fun acceptTos() {
-    viewModelScope.launch { dataStoreRepository.acceptTos() }
+    viewModelScope.launch(Dispatchers.IO) {
+      dataStoreRepository.acceptTos()
+      _isTosAccepted.value = true
+    }
   }
 
   fun getIsGemmaTermsOfUseAccepted(): Boolean {
-    return runBlocking { dataStoreRepository.isGemmaTermsOfUseAccepted() }
+    return _isGemmaTermsOfUseAccepted.value
   }
 
   fun acceptGemmaTermsOfUse() {
-    viewModelScope.launch { dataStoreRepository.acceptGemmaTermsOfUse() }
+    viewModelScope.launch(Dispatchers.IO) {
+      dataStoreRepository.acceptGemmaTermsOfUse()
+      _isGemmaTermsOfUseAccepted.value = true
+    }
+  }
+
+  fun refreshAcceptanceState() {
+    viewModelScope.launch(Dispatchers.IO) {
+      _isTosAccepted.value = dataStoreRepository.isTosAccepted()
+      _isGemmaTermsOfUseAccepted.value = dataStoreRepository.isGemmaTermsOfUseAccepted()
+    }
   }
 }

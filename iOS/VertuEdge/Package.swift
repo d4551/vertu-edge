@@ -8,15 +8,21 @@ let package = Package(
     products: [
         .library(name: "VertuEdgeCore", targets: ["VertuEdgeCore"]),
         .library(name: "VertuEdgeDriver", targets: ["VertuEdgeDriver"]),
+        .library(name: "VertuEdgeDriverXCTest", targets: ["VertuEdgeDriverXCTest"]),
         .library(name: "VertuEdgeUI", targets: ["VertuEdgeUI"]),
     ],
     targets: [
         .target(
-            name: "VertuEdgeCore"
+            name: "VertuEdgeCore",
+            plugins: ["DeviceAiProfilePlugin"]
         ),
         .target(
             name: "VertuEdgeDriver",
             dependencies: ["VertuEdgeCore"]
+        ),
+        .target(
+            name: "VertuEdgeDriverXCTest",
+            dependencies: ["VertuEdgeCore", "VertuEdgeDriver"]
         ),
         .target(
             name: "VertuEdgeUI",
@@ -26,6 +32,10 @@ let package = Package(
         .testTarget(
             name: "VertuEdgeDriverTests",
             dependencies: ["VertuEdgeCore", "VertuEdgeDriver"]
+        ),
+        .plugin(
+            name: "DeviceAiProfilePlugin",
+            capability: .buildTool()
         ),
     ]
 )

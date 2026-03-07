@@ -18,6 +18,7 @@ package com.google.ai.edge.gallery.ui.common
 
 import android.Manifest
 import android.content.Context
+import android.util.Log
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
@@ -213,7 +214,7 @@ private suspend fun startCamera(
     cameraProvider.unbindAll()
     cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, imageAnalysis)
   } catch (exc: Exception) {
-    // todo: Handle exceptions (e.g., camera initialization failure)
+    Log.e("LiveCameraView", "Camera initialization failed", exc)
   }
   return cameraProvider
 }

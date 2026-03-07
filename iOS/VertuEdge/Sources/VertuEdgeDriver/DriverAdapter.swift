@@ -16,16 +16,54 @@ public protocol DriverAdapter {
     func execute(flow: FlowV1, correlationId: String) -> IosDriverReport
 }
 
-// MARK: - IosXcTestDriver conformance
+/// Default iOS driver adapter used by runtime UI and protocol surfaces.
+///
+/// This centralizes the concrete execution backend selection so callers bind to
+/// a stable protocol instead of a platform-specific implementation.
+@MainActor
+public final class DefaultDriverAdapter: DriverAdapter {
+    public init() {}
 
-extension IosXcTestDriver: DriverAdapter {
-    // `IosXcTestDriver.execute(flow:correlationId:screenshotDirectory:)` satisfies the
-    // protocol requirement because `screenshotDirectory` carries a default value of nil,
-    // so callers using the protocol witness only supply the two required labels.
-    //
-    // Swift requires the protocol witness to match the label set exactly when there are
-    // extra defaulted parameters, so we provide a thin forwarding overload here.
     public func execute(flow: FlowV1, correlationId: String) -> IosDriverReport {
-        execute(flow: flow, correlationId: correlationId, screenshotDirectory: nil)
+        guard !flow.steps.isEmpty else {
+            return IosDriverReport(
+                completedSteps: 0,
+                totalSteps: 0,
+                state: .empty,
+                message: "No flow steps were provided.",
+                correlationId: correlationId,
+                steps: []
+            )
+        }
+
+        let reason = "iOS automation execution requires an external XCTest host and is unavailable inside the app bundle."
+        return IosDriverReport(
+            completedSteps: 0,
+            totalSteps: flow.steps.count,
+            state: .errorNonRetryable,
+            message: reason,
+            correlationId: correlationId,
+            steps: [
+                IosDriverStepReport(
+                    commandIndex: 0,
+                    commandType: "automationUnavailable",
+                    state: .unsupported,
+                    message: reason,
+                    startedAt: ISO8601DateFormatter().string(from: Date()),
+                    endedAt: ISO8601DateFormatter().string(from: Date()),
+                    durationMs: 0,
+                    error: IosDriverError(
+                        code: "IOS_XCTEST_EXTERNAL_HOST_REQUIRED",
+                        category: "dependency",
+                        commandIndex: 0,
+                        command: "automationUnavailable",
+                        reason: reason,
+                        retryable: false,
+                        correlationId: correlationId
+                    ),
+                    artifact: nil
+                )
+            ]
+        )
     }
 }

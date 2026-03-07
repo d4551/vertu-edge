@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vertu brand palette — single source for XML/drawable resources. Align with Color.kt, brand-overrides.css, control-plane brand.ts -->
+<resources>
+    <color name="vertu_gold">#D4B978</color>
+    <color name="vertu_gold_deep">#C4A55E</color>
+    <color name="vertu_gold_light">#E8D9A8</color>
+    <color name="vertu_charcoal">#111111</color>
+    <color name="vertu_black">#080808</color>
+    <color name="vertu_cream">#F2EDE5</color>
+    <color name="vertu_ivory">#FAF7F2</color>
+</resources>

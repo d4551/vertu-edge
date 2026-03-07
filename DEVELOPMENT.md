@@ -53,10 +53,18 @@ The typed Bun CLI is the single owner for repo-wide verification:
 bun run --cwd tooling/vertu-flow-kit src/cli.ts verify all
 ```
 
+`verify all` now fails when the control-plane database contains plaintext provider credentials, unreadable encrypted credentials, or encrypted credentials without a valid `VERTU_ENCRYPTION_KEY`.
+
 Wrapper:
 
 ```bash
 ./scripts/verify_all.sh
+```
+
+### Audit provider credential integrity
+
+```bash
+bun run --cwd tooling/vertu-flow-kit src/cli.ts audit provider-credentials
 ```
 
 ### Build application artifacts
@@ -86,6 +94,18 @@ Wrapper:
 ```
 
 ### Run the native device protocol
+
+```bash
+bun run --cwd tooling/vertu-flow-kit src/cli.ts device-ai run-protocol
+```
+
+Direct wrapper:
+
+```bash
+./scripts/run_device_ai_protocol.sh
+```
+
+Or as part of full verification:
 
 ```bash
 VERTU_VERIFY_DEVICE_AI_PROTOCOL=1 \
@@ -118,10 +138,10 @@ The native device protocol now installs the latest canonical Android/iOS build a
 
 The repo scripts already resolve Java 21 and Android SDK through:
 
-- [scripts/lib/java21.sh](scripts/lib/java21.sh)
-- [scripts/lib/android_sdk.sh](scripts/lib/android_sdk.sh)
+- [shared/host-tooling.ts](shared/host-tooling.ts)
 
-`scripts/run_android_build.sh` now includes one automatic recovery retry for known Kotlin/KAPT incremental cache corruption signatures and clears Kotlin build caches before retrying.
+`vertu-flow build android` is now the canonical Android build owner. It includes one automatic recovery retry for known Kotlin/KAPT incremental cache corruption signatures and clears Kotlin build caches before retrying; `scripts/run_android_build.sh` is a thin wrapper over that typed command.
+`vertu-flow build ios` is now the canonical iOS build owner. It resolves Xcode toolchains, validates shared schemes and destinations, builds the host app or SwiftPM package, packages the artifact as ZIP, and emits typed artifact metadata; `scripts/run_ios_build.sh` is a thin wrapper over that typed command.
 
 ### iOS
 
@@ -197,6 +217,8 @@ Treat these as the canonical sources of truth:
   - [control-plane/src/contracts/http.ts](control-plane/src/contracts/http.ts)
 - runtime config:
   - [control-plane/src/config.ts](control-plane/src/config.ts)
+  - [control-plane/src/config/env.ts](control-plane/src/config/env.ts)
+  - [control-plane/src/config/device-ai-profile.ts](control-plane/src/config/device-ai-profile.ts)
   - [control-plane/config/device-ai-profile.json](control-plane/config/device-ai-profile.json)
 
 ## Documentation usage rules

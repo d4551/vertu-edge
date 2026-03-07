@@ -458,6 +458,69 @@ public struct ModelSourceRegistryPayload: Codable, Sendable {
 
 public typealias ModelSourceRegistryEnvelope = ControlPlaneEnvelope<ModelSourceRegistryPayload>
 
+public extension Array where Element == ModelSourceDescriptor {
+    /// Resolve a canonical model source identifier from candidate, fallback, and canonical fallback values.
+    func resolveModelSourceId(
+        candidate: String,
+        fallback: String,
+        canonicalFallback: String
+    ) -> String {
+        let normalizedCandidate = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !normalizedCandidate.isEmpty,
+           let directMatch = resolveKnownModelSourceId(normalizedCandidate) {
+            return directMatch
+        }
+
+        let normalizedFallback = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !normalizedFallback.isEmpty,
+           let fallbackMatch = resolveKnownModelSourceId(normalizedFallback) {
+            return fallbackMatch
+        }
+
+        let normalizedCanonicalFallback = canonicalFallback.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !normalizedCanonicalFallback.isEmpty,
+           let canonicalMatch = resolveKnownModelSourceId(normalizedCanonicalFallback) {
+            return canonicalMatch
+        }
+
+        if isEmpty {
+            return normalizedCanonicalFallback.isEmpty ? normalizedFallback : normalizedCanonicalFallback
+        }
+
+        return first(where: { !$0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?.id
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nonEmpty ?? (normalizedCanonicalFallback.isEmpty ? normalizedFallback : normalizedCanonicalFallback)
+    }
+
+    /// Resolve a canonical model source identifier from a raw id or alias value.
+    func resolveKnownModelSourceId(_ rawSource: String) -> String? {
+        let normalizedSource = rawSource.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedSource.isEmpty else {
+            return nil
+        }
+
+        if let directMatch = first(where: { $0.id.caseInsensitiveCompare(normalizedSource) == .orderedSame }) {
+            return directMatch.id
+        }
+
+        if let aliasMatch = first(where: { source in
+            source.aliases.contains { alias in
+                alias.caseInsensitiveCompare(normalizedSource) == .orderedSame
+            }
+        }) {
+            return aliasMatch.id
+        }
+
+        return nil
+    }
+}
+
+private extension String {
+    var nonEmpty: String? {
+        isEmpty ? nil : self
+    }
+}
+
 /// Protocol boundary to keep control-plane transport testable.
 public protocol ControlPlaneAPIClient: Sendable {
     func fetchModelSources(baseURL: URL) async throws -> ModelSourceRegistryEnvelope

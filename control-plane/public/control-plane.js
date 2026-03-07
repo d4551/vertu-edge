@@ -2,6 +2,21 @@
  * Control Plane client-side script: HTMX extensions, validation, error handling, confirm modal, toast cleanup.
  * Expects window.__VERTU_CONFIG__ to be set before this script loads (injected by layout).
  */
+
+/** Filter AI provider tabs by name. Called from oninput on the provider search input. */
+function filterProviderTabs(query) {
+  var tabs = document.querySelectorAll('[name="provider-tabs"]');
+  var q = (query || "").toLowerCase().trim();
+  tabs.forEach(function (tab) {
+    var label = (tab.getAttribute("aria-label") || "").toLowerCase();
+    var content = tab.nextElementSibling;
+    var show = !q || label.includes(q);
+    tab.style.display = show ? "" : "none";
+    if (content && content.classList.contains("tab-content")) {
+      content.style.display = show ? "" : "none";
+    }
+  });
+}
 if (typeof htmx !== "undefined") {
   htmx.defineExtension("fade-swap", {
     isInlineSwap: function (swapStyle) {
@@ -31,6 +46,7 @@ if (typeof htmx !== "undefined") {
   const MSG = CONFIG.validation || {};
   const CONFIRM_DEFAULT = CONFIG.confirmModalDefault || "Continue?";
   const BREAKPOINT_LG = typeof CONFIG.layoutBreakpointLgPx === "number" ? CONFIG.layoutBreakpointLgPx : 1024;
+  let pendingOperatorWorkspaceFocus = false;
   const MODEL_SOURCE_REGISTRY = Array.isArray(CONFIG.modelSources) ? CONFIG.modelSources : [];
   const DEFAULT_MODEL_SOURCE =
     typeof CONFIG.defaultModelSource === "string" && CONFIG.defaultModelSource.trim()
@@ -67,6 +83,39 @@ if (typeof htmx !== "undefined") {
     }
   }
 
+  function focusOperatorWorkspaceNow() {
+    var workspace = document.getElementById("operator-workspace");
+    var input = document.getElementById("floating-chat-msg");
+    if (!workspace || !input) return false;
+    workspace.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.requestAnimationFrame(function () {
+      if (typeof input.focus === "function") {
+        input.focus({ preventScroll: true });
+      }
+    });
+    return true;
+  }
+
+  function openOperatorWorkspace() {
+    if (focusOperatorWorkspaceNow()) return;
+    var mainContent = document.getElementById("main-content");
+    if (!mainContent || typeof htmx === "undefined") {
+      window.location.assign("/dashboard/overview#operator-workspace");
+      return;
+    }
+    pendingOperatorWorkspaceFocus = true;
+    htmx.ajax("GET", "/dashboard/overview", {
+      target: mainContent,
+      swap: "innerHTML show:top",
+    });
+    if (window.location.pathname !== "/dashboard/overview") {
+      window.history.pushState({}, "", "/dashboard/overview");
+    }
+    syncNavActiveState("/dashboard/overview");
+  }
+
+  window.focusOperatorWorkspace = openOperatorWorkspace;
+
   function isValidUrl(s) {
     if (!s || typeof s !== "string") return false;
     const trimmed = s.trim();
@@ -92,15 +141,11 @@ if (typeof htmx !== "undefined") {
     if (/[.][.]|\\|[\r\n\x00]/.test(trimmed)) return MSG.modelRefInvalid || "Invalid model reference.";
     const lower = trimmed.toLowerCase();
     if (lower.startsWith("http://") || lower.startsWith("https://")) {
-      if (!isValidUrl(trimmed)) return MSG.modelRefInvalid || "Invalid model reference.";
-      try {
-        const parsed = new URL(trimmed);
-        const hostname = parsed.hostname.toLowerCase();
-        const hostOk = hostname === host || hostname === "www." + host;
-        if (!hostOk || parsed.search || parsed.hash) return MSG.modelRefInvalid || "Invalid model reference.";
-      } catch (_error) {
-        return MSG.modelRefInvalid || "Invalid model reference.";
-      }
+      if (!isValidUrl(trimmed) || !URL.canParse(trimmed)) return MSG.modelRefInvalid || "Invalid model reference.";
+      const parsed = new URL(trimmed);
+      const hostname = parsed.hostname.toLowerCase();
+      const hostOk = hostname === host || hostname === "www." + host;
+      if (!hostOk || parsed.search || parsed.hash) return MSG.modelRefInvalid || "Invalid model reference.";
     }
     const escapedHost = host.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const hostPrefix = host + "/";
@@ -116,57 +161,40 @@ if (typeof htmx !== "undefined") {
     return null;
   }
 
-  function isLikelyAudioMime(value) {
-    return /^[a-z][a-z0-9+.-]*\/[a-z0-9+.-]+$/i.test(value);
-  }
-
-  function isLikelyBase64(value) {
-    const compact = value.replace(/\s+/g, "");
-    if (!compact.length || compact.length % 4 !== 0) return false;
-    return /^[A-Za-z0-9+/=]+$/.test(compact);
-  }
-
   function getTrimmedFieldValue(form, selector) {
-    const field = form.querySelector(selector);
+    const field = form.querySelector(selector + ":checked") || form.querySelector(selector);
     if (!field || typeof field.value !== "string") return "";
     return field.value.trim();
   }
 
-  function getBooleanFieldChecked(form, selector) {
-    const field = form.querySelector(selector);
-    return !!(field && field.checked);
-  }
-
-  function validateFloatingChatForm(form) {
+  function validateAiWorkflowForm(form) {
+    const mode = getTrimmedFieldValue(form, '[name="mode"]');
     const message = getTrimmedFieldValue(form, '[name="message"]');
-    const speechMime = getTrimmedFieldValue(form, '[name="speechInput[mimeType]"]');
-    const speechData = getTrimmedFieldValue(form, '[name="speechInput[data]"]');
-    const requestTts = getBooleanFieldChecked(form, '[name="requestTts"]');
-    const ttsOutputMimeType = getTrimmedFieldValue(form, '[name="ttsOutputMimeType"]');
-
-    const hasSpeechMime = speechMime.length > 0;
-    const hasSpeechData = speechData.length > 0;
-
-    if (!message && !hasSpeechMime && !hasSpeechData) {
-      return MSG.chatMessageOrSpeechRequired || "Enter a message or provide both speech MIME type and data.";
+    if (!mode) {
+      return MSG.aiWorkflowModeRequired || "Select a workflow mode.";
     }
-
-    if (hasSpeechMime !== hasSpeechData) {
-      return MSG.chatSpeechInputPairRequired || "Provide both speech MIME type and speech data together.";
+    if (!message) {
+      return MSG.aiWorkflowMessageRequired || "Enter a prompt for the workflow.";
     }
+    if (mode === "image") {
+      const size = getTrimmedFieldValue(form, '[name="imageOptions[size]"]');
+      const seedValue = getTrimmedFieldValue(form, '[name="imageOptions[seed]"]');
+      const stepsValue = getTrimmedFieldValue(form, '[name="imageOptions[steps]"]');
 
-    if (hasSpeechMime && !isLikelyAudioMime(speechMime)) {
-      return MSG.chatSpeechMimeInvalid || "Invalid MIME type. Use a format like audio/wav.";
+      if (size && !/^[0-9]{3,4}x[0-9]{3,4}$/.test(size)) return MSG.aiWorkflowImageSizeInvalid || "Select a valid image size.";
+      if (seedValue) {
+        const seed = Number(seedValue);
+        if (!Number.isFinite(seed) || !Number.isInteger(seed)) {
+          return MSG.aiWorkflowSeedInteger || "Seed must be an integer.";
+        }
+      }
+      if (stepsValue) {
+        const steps = Number(stepsValue);
+        if (!Number.isFinite(steps) || !Number.isInteger(steps) || steps < 1 || steps > 100) {
+          return MSG.aiWorkflowStepsRange || "Steps must be an integer between 1 and 100.";
+        }
+      }
     }
-
-    if (hasSpeechData && !isLikelyBase64(speechData)) {
-      return MSG.chatSpeechDataInvalid || "Speech data must be valid base64.";
-    }
-
-    if (requestTts && !ttsOutputMimeType) {
-      return MSG.chatTtsOutputFormatRequired || "Select a TTS output format.";
-    }
-
     return null;
   }
 
@@ -232,10 +260,10 @@ if (typeof htmx !== "undefined") {
         }
       }
 
-      if (path.indexOf("/api/ai/chat") !== -1) {
+      if (path.indexOf("/api/ai/workflows/run") !== -1) {
         const form = el && (el.form || (el.closest && el.closest("form")));
         if (form) {
-          err = validateFloatingChatForm(form);
+          err = validateAiWorkflowForm(form);
         }
         if (err && targetId) {
           evt.preventDefault();
@@ -247,8 +275,8 @@ if (typeof htmx !== "undefined") {
       if (path.indexOf("/api/apps/build") !== -1) {
         const form = el && (el.form || (el.closest && el.closest("form")));
         if (form) {
-          const platform = (form.querySelector('[name="platform"]') || {}).value;
-          if (!platform || (platform !== "android" && platform !== "ios")) {
+          const platform = getTrimmedFieldValue(form, '[name="platform"]');
+          if (!platform || (platform !== "android" && platform !== "ios" && platform !== "desktop")) {
             err = MSG.appBuildPlatform || "Please select a platform.";
           }
         }
@@ -385,7 +413,70 @@ if (typeof htmx !== "undefined") {
   })();
 
   // Event delegation for data-preset buttons (XSS-safe alternative to inline onclick)
+  const dialogOpeners = new Map();
+
   document.body.addEventListener("click", function (evt) {
+    const dismissButton = evt.target && evt.target.closest("[data-dismiss-target]");
+    if (dismissButton) {
+      const targetId = dismissButton.getAttribute("data-dismiss-target");
+      const target = targetId ? document.getElementById(targetId) : null;
+      if (target) {
+        target.classList.add("hidden");
+      }
+      return;
+    }
+
+    const navButton = evt.target && evt.target.closest("[data-nav-href]");
+    if (navButton) {
+      const href = navButton.getAttribute("data-nav-href");
+      if (href) {
+        window.location.assign(href);
+      }
+      return;
+    }
+
+    const drawerButton = evt.target && evt.target.closest("[data-drawer-open]");
+    if (drawerButton) {
+      const drawerId = drawerButton.getAttribute("data-drawer-open");
+      const drawer = drawerId ? document.getElementById(drawerId) : null;
+      if (drawer && drawer instanceof HTMLInputElement) {
+        drawer.checked = true;
+        drawer.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      return;
+    }
+
+    const operatorWorkspaceTrigger = evt.target && evt.target.closest("[data-operator-workspace-open]");
+    if (operatorWorkspaceTrigger) {
+      evt.preventDefault();
+      openOperatorWorkspace();
+      return;
+    }
+
+    const dialogTrigger = evt.target && evt.target.closest("[data-dialog-open]");
+    if (dialogTrigger) {
+      const dialogId = dialogTrigger.getAttribute("data-dialog-open");
+      const dialog = dialogId ? document.getElementById(dialogId) : null;
+      if (dialog && typeof dialog.showModal === "function") {
+        dialogOpeners.set(dialogId, dialogTrigger);
+        dialog.showModal();
+        const eventName = dialogTrigger.getAttribute("data-dialog-event");
+        if (eventName) {
+          document.body.dispatchEvent(new Event(eventName));
+        }
+        const focusTargetId = dialogTrigger.getAttribute("data-dialog-focus");
+        if (focusTargetId) {
+          setTimeout(function () {
+            const focusTarget = document.getElementById(focusTargetId);
+            if (focusTarget && typeof focusTarget.focus === "function") {
+              focusTarget.focus();
+            }
+          }, 100);
+        }
+      }
+      return;
+    }
+
     const btn = evt.target && evt.target.closest("[data-preset-target]");
     if (!btn) return;
     const targetId = btn.getAttribute("data-preset-target");
@@ -396,21 +487,75 @@ if (typeof htmx !== "undefined") {
     }
   });
 
-  document.addEventListener("DOMContentLoaded", function () {
-    const modelSourceSelect = document.getElementById("model-source-select");
-    const modelRefInput = document.getElementById("model-ref-input");
-    const modelRefHint = document.getElementById("model-ref-validator-hint");
+  /** Update sidebar and dock active states after HTMX section swap. */
+  function syncNavActiveState(path) {
+    var section = "";
+    var match = path && path.match(/\/dashboard\/(\w+)/);
+    if (match) {
+      section = match[1];
+    } else if (path === "/" || path === "") {
+      section = "overview";
+    }
+    if (!section) return;
 
+    // Update sidebar links
+    document.querySelectorAll('.drawer-side .menu a[hx-get]').forEach(function (link) {
+      var href = link.getAttribute("hx-get") || "";
+      var isActive = href === "/dashboard/" + section;
+      link.classList.toggle("active", isActive);
+      if (isActive) {
+        link.setAttribute("aria-current", "page");
+      } else {
+        link.removeAttribute("aria-current");
+      }
+    });
+
+    // Update mobile dock links
+    document.querySelectorAll('.dock a[hx-get]').forEach(function (link) {
+      var href = link.getAttribute("hx-get") || "";
+      var isActive = href === "/dashboard/" + section;
+      link.classList.toggle("dock-active", isActive);
+      if (isActive) {
+        link.setAttribute("aria-current", "page");
+      } else {
+        link.removeAttribute("aria-current");
+      }
+    });
+  }
+
+  /** Listen for HTMX content swaps on the main content area. */
+  document.body.addEventListener("htmx:afterSettle", function (evt) {
+    if (evt.detail && evt.detail.target && evt.detail.target.id === "main-content") {
+      var path = evt.detail.pathInfo && evt.detail.pathInfo.requestPath;
+      syncNavActiveState(path);
+      if (pendingOperatorWorkspaceFocus) {
+        pendingOperatorWorkspaceFocus = false;
+        focusOperatorWorkspaceNow();
+      }
+    }
+  });
+
+  /** Handle popstate for browser back/forward navigation. */
+  window.addEventListener("popstate", function () {
+    syncNavActiveState(window.location.pathname);
+  });
+
+  document.addEventListener("DOMContentLoaded", function () {
+    var modelSourceSelect = document.getElementById("model-source-select");
+    var modelRefInput = document.getElementById("model-ref-input");
+    var modelRefHint = document.getElementById("model-ref-validator-hint");
+
+    /** Sync model source hint text and placeholder when source dropdown changes. */
     function syncModelSourceHint() {
       if (!modelSourceSelect || !modelRefInput || !modelRefHint) return;
-      const selected = modelSourceSelect.options[modelSourceSelect.selectedIndex];
+      var selected = modelSourceSelect.options[modelSourceSelect.selectedIndex];
       if (!selected) return;
-      const placeholder = selected.getAttribute("data-placeholder");
-      const hint = selected.getAttribute("data-hint");
+      var placeholder = selected.getAttribute("data-placeholder");
+      var hint = selected.getAttribute("data-hint");
       if (placeholder && placeholder.trim().length > 0) {
         modelRefInput.setAttribute("placeholder", placeholder);
       }
-      const fallbackHint = modelRefHint.getAttribute("data-default-hint") || "";
+      var fallbackHint = modelRefHint.getAttribute("data-default-hint") || "";
       modelRefHint.textContent = hint && hint.trim().length > 0 ? hint : fallbackHint;
     }
 
@@ -419,35 +564,21 @@ if (typeof htmx !== "undefined") {
       syncModelSourceHint();
     }
 
-    const drawerCheckbox = document.getElementById("vertu-drawer");
-    const drawerTrigger = document.querySelector(".drawer-button");
-    const drawerSide = document.querySelector(".drawer-side");
-    const sidebarLinks = drawerSide ? Array.from(drawerSide.querySelectorAll('a[href^="#"]')) : [];
-    const floatingChatTtsToggle = document.getElementById("floating-chat-request-tts");
-    const floatingChatTtsOutput = document.getElementById("floating-chat-tts-output-mime");
-    const floatingChatTtsVoice = document.getElementById("floating-chat-tts-voice");
+    var drawerCheckbox = document.getElementById("vertu-drawer");
+    var drawerTrigger = document.querySelector(".drawer-button");
+    var drawerSide = document.querySelector(".drawer-side");
+    var sidebarNavLinks = drawerSide ? Array.from(drawerSide.querySelectorAll('a[hx-get]')) : [];
 
-    function syncFloatingChatTtsState() {
-      const enabled = floatingChatTtsToggle && floatingChatTtsToggle.checked;
-      if (!floatingChatTtsOutput || !floatingChatTtsVoice) return;
-      if (enabled) {
-        floatingChatTtsOutput.removeAttribute("disabled");
-        floatingChatTtsVoice.removeAttribute("disabled");
-      } else {
-        floatingChatTtsOutput.setAttribute("disabled", "disabled");
-        floatingChatTtsVoice.setAttribute("disabled", "disabled");
-      }
-    }
-
+    /** Manage drawer open/close focus behavior for accessibility. */
     function onDrawerChange() {
       if (!drawerCheckbox) return;
-      const isOpen = drawerCheckbox.checked;
+      var isOpen = drawerCheckbox.checked;
       if (drawerTrigger) {
         drawerTrigger.setAttribute("aria-expanded", String(isOpen));
       }
-      const isMobile = window.matchMedia("(max-width: " + (BREAKPOINT_LG - 1) + "px)").matches;
-      if (isMobile && isOpen && sidebarLinks.length > 0) {
-        sidebarLinks[0].focus();
+      var isMobile = window.matchMedia("(max-width: " + (BREAKPOINT_LG - 1) + "px)").matches;
+      if (isMobile && isOpen && sidebarNavLinks.length > 0) {
+        sidebarNavLinks[0].focus();
       } else if (isMobile && !isOpen && drawerTrigger) {
         drawerTrigger.focus();
       }
@@ -458,7 +589,8 @@ if (typeof htmx !== "undefined") {
       onDrawerChange();
     }
 
-    document.querySelectorAll(".drawer-side a[href^='#']").forEach(function (link) {
+    /** Auto-close mobile drawer after clicking an HTMX nav link. */
+    document.querySelectorAll(".drawer-side a[hx-get]").forEach(function (link) {
       link.addEventListener("click", function () {
         if (drawerCheckbox && window.matchMedia("(max-width: " + (BREAKPOINT_LG - 1) + "px)").matches) {
           drawerCheckbox.checked = false;
@@ -467,27 +599,21 @@ if (typeof htmx !== "undefined") {
       });
     });
 
-    document.querySelectorAll('#card-ai-providers .collapse .collapse-title, .collapse-title[role="button"]').forEach(function (trigger) {
-      trigger.addEventListener("keydown", function (evt) {
-        if (evt.key === "Enter" || evt.key === " ") {
-          evt.preventDefault();
-          trigger.click();
-        }
+    /** Sidebar keyboard navigation: arrow keys between tab links. */
+    if (drawerSide) {
+      drawerSide.addEventListener("keydown", function (evt) {
+        if (evt.key !== "ArrowDown" && evt.key !== "ArrowUp") return;
+        var links = Array.from(drawerSide.querySelectorAll('.menu a[hx-get]'));
+        if (links.length === 0) return;
+        var idx = links.indexOf(document.activeElement);
+        if (idx === -1) return;
+        evt.preventDefault();
+        var next = evt.key === "ArrowDown"
+          ? links[(idx + 1) % links.length]
+          : links[(idx - 1 + links.length) % links.length];
+        if (next && typeof next.focus === "function") next.focus();
       });
-      const collapse = trigger.closest(".collapse");
-      const input = collapse && collapse.querySelector('input[type="checkbox"], input[type="radio"]');
-      if (input) {
-        const syncExpanded = function () {
-          trigger.setAttribute("aria-expanded", String(input.checked));
-        };
-        input.addEventListener("change", syncExpanded);
-        syncExpanded();
-      }
-    });
-
-    if (floatingChatTtsToggle) {
-      floatingChatTtsToggle.addEventListener("change", syncFloatingChatTtsState);
-      syncFloatingChatTtsState();
     }
+
   });
 })();

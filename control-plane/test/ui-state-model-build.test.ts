@@ -88,16 +88,92 @@ async function requestHtml(path: string, init?: RequestInit, services?: Partial<
 }
 
 describe("UI state machine: model pull + app build", () => {
-  test("dashboard renders idle state containers for model/build cards", async () => {
+  test("root route renders conversation-first operator workspace", async () => {
     const html = await requestHtml("/");
 
-    expect(html).toContain('id="model-pull-result"');
-    expect(html).toContain('id="app-build-result"');
-    expect(html).toContain('id="providers-validation-result"');
-    expect(html).toContain('role="status"');
-    expect(html).toContain('aria-live="polite"');
-    expect(html).toContain('id="flow-validate-result"');
-    expect(html).toContain("Quick model presets");
+    expect(html).toContain('id="section-overview"');
+    expect(html).toContain('id="floating-chat-form"');
+    expect(html).toContain('id="floating-chat-messages"');
+    expect(html).toContain('id="operator-runtime-strip"');
+    expect(html).toContain('id="overview-summary-grid"');
+    expect(html).toContain('id="overview-summary-build"');
+    expect(html).toContain('id="overview-summary-readiness"');
+    expect(html).toContain('id="overview-summary-automation"');
+    expect(html).toContain('id="overview-summary-system"');
+    expect(html).toContain("Operator Command Center");
+    expect(html).toContain("Configured providers");
+    expect(html).not.toContain('id="section-runtime"');
+    expect(html).not.toContain('id="section-build"');
+    expect(html).not.toContain('id="section-automation"');
+    expect(html).not.toContain('id="section-system"');
+    expect(html).not.toContain('id="card-app-build"');
+    expect(html).not.toContain('id="card-device-readiness"');
+    expect(html).not.toContain('id="flow-validate-result"');
+    expect(html).toContain("Configure runtime");
+    expect(html).toContain("Generate apps");
+    expect(html).toContain("Run automation");
+  });
+
+  test("section routes render idle state containers for their cards", async () => {
+    const runtimeHtml = await requestHtml("/dashboard/runtime");
+    expect(runtimeHtml).toContain('id="model-pull-result"');
+    expect(runtimeHtml).toContain('id="providers-validation-result"');
+    expect(runtimeHtml).toContain('role="status"');
+    expect(runtimeHtml).toContain('aria-live="polite"');
+    expect(runtimeHtml).toContain("Quick model presets");
+
+    const buildHtml = await requestHtml("/dashboard/build");
+    expect(buildHtml).toContain('id="app-build-result"');
+    expect(buildHtml).toContain('id="card-device-readiness"');
+    expect(buildHtml).toContain('hx-get="/api/device-ai/readiness"');
+    expect(buildHtml).toContain('id="device-readiness-result"');
+    expect(buildHtml).toContain('id="app-build-platform-android"');
+    expect(buildHtml).toContain('id="app-build-platform-ios"');
+    expect(buildHtml).toContain('role="radiogroup"');
+    expect(buildHtml).toContain('aria-describedby="app-build-platform-hint"');
+
+    const automationHtml = await requestHtml("/dashboard/automation");
+    expect(automationHtml).toContain('id="flow-validate-result"');
+    expect(automationHtml).toContain('id="flow-target-android"');
+    expect(automationHtml).toContain('id="flow-target-ios"');
+    expect(automationHtml).toContain('id="flow-target-runtime-hint"');
+  });
+
+  test("dashboard renders sidebar tab navigation with ARIA attributes", async () => {
+    const html = await requestHtml("/");
+
+    // Sidebar nav links with HTMX attributes
+    expect(html).toContain('hx-get="/dashboard/overview"');
+    expect(html).toContain('hx-get="/dashboard/runtime"');
+    expect(html).toContain('hx-get="/dashboard/build"');
+    expect(html).toContain('hx-get="/dashboard/automation"');
+    expect(html).toContain('hx-get="/dashboard/system"');
+    expect(html).toContain('hx-target="#main-content"');
+    expect(html).toContain('hx-push-url="true"');
+
+    // Active section has aria-current
+    expect(html).toContain('aria-current="page"');
+  });
+
+  test("dashboard renders mobile dock navigation", async () => {
+    const html = await requestHtml("/");
+
+    // Dock nav element
+    expect(html).toContain('class="dock');
+    expect(html).toContain('lg:hidden');
+  });
+
+  test("section routes render card sections as semantic <section> elements", async () => {
+    const runtimeHtml = await requestHtml("/dashboard/runtime");
+    expect(runtimeHtml).toContain('aria-labelledby="heading-models"');
+
+    const buildHtml = await requestHtml("/dashboard/build");
+    expect(buildHtml).toContain('aria-labelledby="heading-app-build"');
+    expect(buildHtml).toContain('aria-labelledby="heading-device-readiness"');
+
+    const systemHtml = await requestHtml("/dashboard/system");
+    expect(systemHtml).toContain('aria-labelledby="heading-preferences"');
+    expect(systemHtml).toContain('id="ucp-discovery-collapse"');
   });
 
   test("model pull route renders loading state", async () => {
@@ -221,6 +297,7 @@ describe("UI state machine: model pull + app build", () => {
         throw createFlowCapabilityError({
           commandIndex: -1,
           command: "platform",
+          code: "app_build_ios_tooling_missing",
           reason: "missing toolchain",
           retryable: false,
           surface: "app_build",
@@ -232,5 +309,6 @@ describe("UI state machine: model pull + app build", () => {
     expect(successHtml).toContain('data-state="success"');
     expect(retryableHtml).toContain('data-state="error-retryable"');
     expect(nonRetryableHtml).toContain('data-state="error-non-retryable"');
+    expect(nonRetryableHtml).toContain("Xcode build tooling is required to build the iOS app on this host.");
   });
 });

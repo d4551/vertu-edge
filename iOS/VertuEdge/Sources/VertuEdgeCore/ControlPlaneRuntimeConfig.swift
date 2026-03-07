@@ -25,6 +25,39 @@ public struct ControlPlaneRuntimeConfig: Sendable {
   /// Override with `VERTU_CONTROL_PLANE_MODEL_STATE_ID_PREFIX` when isolated state is required.
   public let modelStateIdPrefix: String
 
+  /// Required model reference for device AI readiness checks.
+  public let deviceAiRequiredModelRef: String
+
+  /// Optional revision pin for required device AI model pulls.
+  public let deviceAiRequiredModelRevision: String
+
+  /// Required model file name used for device AI readiness checks.
+  public let deviceAiRequiredModelFileName: String
+
+  /// Optional expected SHA-256 for required device AI model artifact validation.
+  public let deviceAiRequiredModelSha256: String
+
+  /// Required capability flags for the pinned device AI model contract.
+  public let deviceAiRequiredCapabilities: [DeviceAiCapability]
+
+  /// Relative managed model directory used for local device AI staging.
+  public let deviceAiManagedModelDirectory: String
+
+  /// Relative managed report directory used for native device AI protocol reports.
+  public let deviceAiManagedReportDirectory: String
+
+  /// Protocol timeout budget in milliseconds.
+  public let deviceAiProtocolTimeoutMs: Int
+
+  /// Maximum age accepted for protocol report freshness checks.
+  public let deviceAiReportMaxAgeMinutes: Int
+
+  /// Maximum download attempts for Hugging Face model acquisition.
+  public let deviceAiDownloadMaxAttempts: Int
+
+  /// Optional Hugging Face token used for gated model downloads.
+  public let deviceAiHfToken: String
+
   public init(
     baseUrl: String? = nil,
     pollIntervalMs: Int? = nil,
@@ -32,7 +65,18 @@ public struct ControlPlaneRuntimeConfig: Sendable {
     defaultPullTimeoutMs: Int? = nil,
     defaultModelSource: String? = nil,
     requestTimeoutSeconds: TimeInterval? = nil,
-    modelStateIdPrefix: String? = nil
+    modelStateIdPrefix: String? = nil,
+    deviceAiRequiredModelRef: String? = nil,
+    deviceAiRequiredModelRevision: String? = nil,
+    deviceAiRequiredModelFileName: String? = nil,
+    deviceAiRequiredModelSha256: String? = nil,
+    deviceAiRequiredCapabilities: [DeviceAiCapability]? = nil,
+    deviceAiManagedModelDirectory: String? = nil,
+    deviceAiManagedReportDirectory: String? = nil,
+    deviceAiProtocolTimeoutMs: Int? = nil,
+    deviceAiReportMaxAgeMinutes: Int? = nil,
+    deviceAiDownloadMaxAttempts: Int? = nil,
+    deviceAiHfToken: String? = nil
   ) {
     self.baseUrl =
       baseUrl
@@ -83,6 +127,78 @@ public struct ControlPlaneRuntimeConfig: Sendable {
         key: "VERTU_CONTROL_PLANE_MODEL_STATE_ID_PREFIX",
         defaultValue: "model-state"
       )
+    self.deviceAiRequiredModelRef =
+      deviceAiRequiredModelRef
+      ?? Self.resolveString(
+        key: "VERTU_REQUIRED_MODEL_REF",
+        defaultValue: GeneratedDeviceAiProfileDefaults.requiredModelRef
+      )
+    self.deviceAiRequiredModelRevision =
+      (deviceAiRequiredModelRevision
+      ?? Self.resolveString(
+        key: "VERTU_REQUIRED_MODEL_REVISION",
+        defaultValue: GeneratedDeviceAiProfileDefaults.revision
+      ))
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    self.deviceAiRequiredModelFileName =
+      deviceAiRequiredModelFileName
+      ?? Self.resolveString(
+        key: "VERTU_REQUIRED_MODEL_FILE",
+        defaultValue: GeneratedDeviceAiProfileDefaults.requiredModelFile
+      )
+    self.deviceAiRequiredModelSha256 =
+      (deviceAiRequiredModelSha256
+      ?? Self.resolveString(
+        key: "VERTU_REQUIRED_MODEL_SHA256",
+        defaultValue: GeneratedDeviceAiProfileDefaults.requiredModelSha256
+      ))
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    self.deviceAiRequiredCapabilities =
+      deviceAiRequiredCapabilities
+      ?? GeneratedDeviceAiProfileDefaults.requiredCapabilities
+    self.deviceAiManagedModelDirectory =
+      deviceAiManagedModelDirectory
+      ?? Self.resolveString(
+        key: "VERTU_DEVICE_AI_MODEL_DIRECTORY",
+        defaultValue: "vertu-device-ai/models"
+      )
+    self.deviceAiManagedReportDirectory =
+      deviceAiManagedReportDirectory
+      ?? Self.resolveString(
+        key: "VERTU_DEVICE_AI_REPORT_DIRECTORY",
+        defaultValue: "vertu-device-ai/reports"
+      )
+    self.deviceAiProtocolTimeoutMs =
+      deviceAiProtocolTimeoutMs
+      ?? Self.resolveInt(
+        key: "VERTU_DEVICE_AI_PROTOCOL_TIMEOUT_MS",
+        defaultValue: 900_000,
+        minValue: 1
+      )
+    self.deviceAiReportMaxAgeMinutes =
+      deviceAiReportMaxAgeMinutes
+      ?? Self.resolveInt(
+        key: "VERTU_DEVICE_AI_REPORT_MAX_AGE_MINUTES",
+        defaultValue: 240,
+        minValue: 1
+      )
+    self.deviceAiDownloadMaxAttempts =
+      deviceAiDownloadMaxAttempts
+      ?? Self.resolveInt(
+        key: "VERTU_DEVICE_AI_DOWNLOAD_MAX_ATTEMPTS",
+        defaultValue: 3,
+        minValue: 1
+      )
+    self.deviceAiHfToken =
+      (deviceAiHfToken
+      ?? Self.resolveString(
+        key: "VERTU_DEVICE_AI_HF_TOKEN",
+        defaultValue: Self.resolveString(
+          key: "HF_TOKEN",
+          defaultValue: Self.resolveString(key: "HUGGINGFACE_HUB_TOKEN")
+        )
+      ))
+      .trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   /// Canonical shared config resolved from environment and app defaults.

@@ -23,10 +23,24 @@ import {
   OPENAI_TTS_SUFFIX,
   OPENAI_TTS_DEFAULT_FORMAT,
   DEFAULT_CHAT_TTS_VOICE,
+  AI_HTTP_MAX_RETRIES,
+  AI_HTTP_RETRY_BASE_DELAY_MS,
+  AI_HTTP_RETRY_MAX_DELAY_MS,
+  RESPONSE_BODY_READ_TIMEOUT_MS,
+  AI_WORKFLOW_HF_IMAGE_BASE_URL,
+  AI_CHAT_NO_CONTENT_ERROR,
+  AI_ANTHROPIC_NO_TEXT_ERROR,
   type JsonRecord,
   type JsonValue,
   safeParseJson,
 } from "./config";
+import {
+  PROVIDER_ID_OLLAMA,
+  PROVIDER_ID_ANTHROPIC,
+  PROVIDER_ID_HUGGINGFACE,
+  PROVIDER_ID_OPENROUTER,
+} from "./runtime-constants";
+import { captureResultAsync, normalizeFailureMessage as normalizeSharedFailureMessage } from "../../shared/failure";
 
 /** Supported AI provider identifiers. */
 export type ProviderId = string;
@@ -58,6 +72,14 @@ export interface TextToSpeechResult {
   /** MIME type returned by the TTS provider. */
   mimeType: string;
   /** Base64-encoded audio output bytes. */
+  data: string;
+}
+
+/** Result of image generation across provider adapters. */
+export interface ImageGenerationResult {
+  /** MIME type for the generated image bytes. */
+  mimeType: string;
+  /** Base64-encoded image payload. */
   data: string;
 }
 
@@ -157,6 +179,16 @@ export interface AiResult<T> {
   error?: string;
 }
 
+/** Optional image generation controls for provider adapters. */
+export interface ProviderImageGenerationOptions {
+  /** Size preset requested from provider adapter (for example `1024x1024`). */
+  size?: string;
+  /** Optional seed for reproducible image output. */
+  seed?: number;
+  /** Optional step count where supported by provider adapters. */
+  steps?: number;
+}
+
 /** Trim trailing separators from configured base URLs. */
 function normalizeBaseUrl(value: string): string {
   return value.trim().replace(/\/+$/, "");
@@ -175,7 +207,7 @@ function openAICompatibleEndpointCandidates(
 ): readonly string[] {
   const normalized = ensureLocalhostIPv4(normalizeBaseUrl(baseUrl));
   const primary = `${normalized}${suffix}`;
-  if (providerId === "huggingface" && !normalized.toLowerCase().endsWith("/v1")) {
+  if (providerId === PROVIDER_ID_HUGGINGFACE && !normalized.toLowerCase().endsWith("/v1")) {
     return [primary, `${normalized}/v1${suffix}`];
   }
   return [primary];
@@ -207,7 +239,7 @@ async function fetchResponseWithEndpointFallback(
       return { ok: true, response };
     }
 
-    const body = await response.text();
+    const body = await readBodyWithTimeout(response);
     lastError = `${response.status}: ${body}`;
   }
   return { ok: false, error: lastError ?? "Provider chat request failed." };
@@ -218,20 +250,20 @@ function listRequestHeaders(providerId: ProviderId, apiKey: string): Record<stri
     "Content-Type": "application/json",
   };
 
-  if (providerId !== "ollama" && providerId !== "anthropic") {
+  if (providerId !== PROVIDER_ID_OLLAMA && providerId !== PROVIDER_ID_ANTHROPIC) {
     if (apiKey) {
       headers["Authorization"] = `Bearer ${apiKey}`;
     }
   }
 
-  if (providerId === "anthropic") {
+  if (providerId === PROVIDER_ID_ANTHROPIC) {
     if (apiKey) {
       headers["x-api-key"] = apiKey;
     }
     headers["anthropic-version"] = ANTHROPIC_API_VERSION;
   }
 
-  if (providerId === "openrouter") {
+  if (providerId === PROVIDER_ID_OPENROUTER) {
     headers["HTTP-Referer"] = OPENROUTER_HTTP_REFERER;
     headers["X-Title"] = OPENROUTER_APP_TITLE;
   }
@@ -241,22 +273,33 @@ function listRequestHeaders(providerId: ProviderId, apiKey: string): Record<stri
 
 function audioRequestHeaders(providerId: ProviderId, apiKey: string): Record<string, string> {
   const headers: Record<string, string> = {};
-  if (providerId !== "ollama" && providerId !== "anthropic" && apiKey) {
+  if (providerId !== PROVIDER_ID_OLLAMA && providerId !== PROVIDER_ID_ANTHROPIC && apiKey) {
     headers["Authorization"] = `Bearer ${apiKey}`;
   }
-  if (providerId === "anthropic") {
+  if (providerId === PROVIDER_ID_ANTHROPIC) {
     headers["x-api-key"] = apiKey;
     headers["anthropic-version"] = ANTHROPIC_API_VERSION;
   }
-  if (providerId === "openrouter") {
+  if (providerId === PROVIDER_ID_OPENROUTER) {
     headers["HTTP-Referer"] = OPENROUTER_HTTP_REFERER;
     headers["X-Title"] = OPENROUTER_APP_TITLE;
   }
   return headers;
 }
 
+function withCorrelationHeader(headers: Record<string, string>, correlationId?: string): Record<string, string> {
+  const normalized = correlationId?.trim();
+  if (!normalized) {
+    return headers;
+  }
+  return {
+    ...headers,
+    "x-correlation-id": normalized,
+  };
+}
+
 function isAudioProvider(providerId: ProviderId): boolean {
-  return providerId !== "anthropic";
+  return providerId !== PROVIDER_ID_ANTHROPIC;
 }
 
 function normalizeBase64Data(value: string): string {
@@ -349,22 +392,22 @@ async function fetchJsonWithTimeout<T extends JsonValue>(
   url: string,
   options: RequestInit = {},
 ): Promise<AiResult<T>> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => {
-    controller.abort();
-  }, AI_PROVIDER_REQUEST_TIMEOUT_MS);
-
-  const fetchResult = await fetchWithResult(url, { ...options, signal: controller.signal });
-  clearTimeout(timeout);
-
-  if (!fetchResult.ok) {
-    if (fetchResult.aborted) {
+  const response = await fetchWithTimeout(url, options).then(
+    (value) => ({ ok: true as const, value }),
+    (failure: FetchFailure) => ({ ok: false as const, failure }),
+  );
+  if (!response.ok) {
+    if (isAbortFailure(response.failure)) {
       return { ok: false, error: `Model list request timed out after ${AI_PROVIDER_REQUEST_TIMEOUT_MS}ms.` };
     }
-    return { ok: false, error: fetchResult.error };
+    return { ok: false, error: fetchFailureMessage(response.failure) };
   }
-
-  const parseResult = safeParseJson<T>(fetchResult.body);
+  if (!response.value.ok) {
+    const body = await readBodyWithTimeout(response.value);
+    return { ok: false, error: `${response.value.status}: ${body}` };
+  }
+  const bodyText = await readBodyWithTimeout(response.value);
+  const parseResult = safeParseJson<T>(bodyText);
   if (!parseResult.ok) {
     return { ok: false, error: parseResult.error };
   }
@@ -379,46 +422,6 @@ type FetchFailure =
   | boolean
   | null
   | undefined;
-
-type FetchResult =
-  | { ok: true; body: string }
-  | { ok: false; error: string; aborted?: boolean };
-
-async function fetchWithResult(url: string, init: RequestInit): Promise<FetchResult> {
-  const outcome = await fetchWithResultImpl(url, init);
-  if (outcome.success) return { ok: true, body: outcome.body };
-  return {
-    ok: false,
-    error: outcome.error,
-    aborted: outcome.aborted,
-  };
-}
-
-async function fetchWithResultImpl(
-  url: string,
-  init: RequestInit,
-): Promise<{ success: true; body: string } | { success: false; error: string; aborted?: boolean }> {
-  const fetchOutcome = await fetch(url, init).then(
-    (response) => ({ ok: true as const, response }),
-    (failure: FetchFailure) => ({ ok: false as const, failure }),
-  );
-  if (!fetchOutcome.ok) {
-    return {
-      success: false,
-      error: fetchFailureMessage(fetchOutcome.failure),
-      aborted: isAbortFailure(fetchOutcome.failure),
-    };
-  }
-  const response = fetchOutcome.response;
-
-  if (!response.ok) {
-    const body = await response.text();
-    return { success: false, error: `${response.status}: ${body}` };
-  }
-
-  const body = await response.text();
-  return { success: true, body };
-}
 
 function isAbortFailure(failure: FetchFailure): boolean {
   if (failure instanceof Error) {
@@ -454,6 +457,7 @@ export async function listProviderModels(
   providerId: ProviderId,
   apiKey: string,
   baseUrlOverride?: string,
+  correlationId?: string,
 ): Promise<AiResult<ProviderModelListEnvelope>> {
   const provider = getProvider(providerId);
   if (!provider) return { ok: false, error: `Unknown provider: ${providerId}` };
@@ -470,8 +474,8 @@ export async function listProviderModels(
     };
   }
 
-  if (providerId === "ollama") {
-    const ollamaResponse = await listOllamaModels(configuredBaseUrl);
+  if (providerId === PROVIDER_ID_OLLAMA) {
+    const ollamaResponse = await listOllamaModels(configuredBaseUrl, correlationId);
     if (!ollamaResponse.ok || !ollamaResponse.data) {
       return { ok: false, error: ollamaResponse.error ?? AI_PROVIDER_OLLAMA_LIST_ERROR };
     }
@@ -489,7 +493,7 @@ export async function listProviderModels(
   const modelEndpoints = openAICompatibleEndpointCandidates(providerId, configuredBaseUrl, OPENAI_MODELS_SUFFIX);
   const response = await fetchJsonWithEndpointFallback<JsonRecord | JsonValue[]>(modelEndpoints, {
     method: "GET",
-    headers: listRequestHeaders(providerId, apiKey),
+    headers: withCorrelationHeader(listRequestHeaders(providerId, apiKey), correlationId),
   });
 
   if (!response.ok || !response.data) {
@@ -520,11 +524,12 @@ export async function listProviderModelsOrDefaults(
   providerId: ProviderId,
   apiKey: string,
   baseUrlOverride?: string,
+  correlationId?: string,
 ): Promise<AiResult<ProviderModelListEnvelope>> {
   const provider = getProvider(providerId);
   if (!provider) return { ok: false, error: `Unknown provider: ${providerId}` };
 
-  const remote = await listProviderModels(providerId, apiKey, baseUrlOverride);
+  const remote = await listProviderModels(providerId, apiKey, baseUrlOverride, correlationId);
   if (remote.ok && remote.data) {
     return remote;
   }
@@ -556,17 +561,18 @@ export async function chatCompletion(
   model: string,
   messages: ChatMessage[],
   baseUrlOverride?: string,
+  correlationId?: string,
 ): Promise<AiResult<string>> {
   const provider = getProvider(providerId);
   if (!provider) return { ok: false, error: `Unknown provider: ${providerId}` };
 
   const baseUrl = baseUrlOverride ?? provider.baseUrl;
 
-  if (providerId === "anthropic") {
-    return anthropicChat(baseUrl, apiKey, model, messages);
+  if (providerId === PROVIDER_ID_ANTHROPIC) {
+    return anthropicChat(baseUrl, apiKey, model, messages, correlationId);
   }
 
-  return openaiCompatibleChat(baseUrl, apiKey, model, messages, providerId);
+  return openaiCompatibleChat(baseUrl, apiKey, model, messages, providerId, correlationId);
 }
 
 /**
@@ -578,6 +584,7 @@ export async function transcribeSpeech(
   model: string,
   speechInput: AudioPayload,
   baseUrlOverride?: string,
+  correlationId?: string,
 ): Promise<AiResult<SpeechToTextResult>> {
   const provider = getProvider(providerId);
   if (!provider) return { ok: false, error: `Unknown provider: ${providerId}` };
@@ -602,7 +609,7 @@ export async function transcribeSpeech(
   formData.append("file", new Blob([decodedBytes], { type: speechInput.mimeType }), "speech-input");
   formData.append("response_format", "json");
 
-  const headers = audioRequestHeaders(providerId, apiKey);
+  const headers = withCorrelationHeader(audioRequestHeaders(providerId, apiKey), correlationId);
   const response = await fetchResponseWithEndpointFallback(endpoints, {
     method: "POST",
     headers,
@@ -638,6 +645,7 @@ export async function synthesizeSpeech(
   outputMimeType: string,
   ttsVoice: string | undefined,
   baseUrlOverride?: string,
+  correlationId?: string,
 ): Promise<AiResult<TextToSpeechResult>> {
   const provider = getProvider(providerId);
   if (!provider) return { ok: false, error: `Unknown provider: ${providerId}` };
@@ -647,7 +655,7 @@ export async function synthesizeSpeech(
 
   const normalizedBase = ensureLocalhostIPv4(normalizeBaseUrl(baseUrlOverride ?? provider.baseUrl));
   const endpoints = openAICompatibleEndpointCandidates(providerId, normalizedBase, OPENAI_TTS_SUFFIX);
-  const headers = audioRequestHeaders(providerId, apiKey);
+  const headers = withCorrelationHeader(audioRequestHeaders(providerId, apiKey), correlationId);
   const normalizedOutputMimeType = outputMimeType.trim();
   const normalizedVoice = ttsVoice?.trim().length ? ttsVoice.trim() : DEFAULT_CHAT_TTS_VOICE;
 
@@ -672,6 +680,177 @@ export async function synthesizeSpeech(
   return { ok: true, data: { mimeType: outputMimeType, data: base64Audio } };
 }
 
+/** Generate an image using provider-native APIs with local-first/fallback orchestration support. */
+export async function generateImage(
+  providerId: ProviderId,
+  apiKey: string,
+  model: string,
+  prompt: string,
+  options: ProviderImageGenerationOptions = {},
+  baseUrlOverride?: string,
+  correlationId?: string,
+): Promise<AiResult<ImageGenerationResult>> {
+  const provider = getProvider(providerId);
+  if (!provider) {
+    return { ok: false, error: `Unknown provider: ${providerId}` };
+  }
+
+  if (providerId === PROVIDER_ID_HUGGINGFACE) {
+    return huggingFaceImageGeneration(apiKey, model, prompt, options, correlationId);
+  }
+
+  return openaiCompatibleImageGeneration(
+    providerId,
+    apiKey,
+    model,
+    prompt,
+    options,
+    baseUrlOverride ?? provider.baseUrl,
+    correlationId,
+  );
+}
+
+async function openaiCompatibleImageGeneration(
+  providerId: ProviderId,
+  apiKey: string,
+  model: string,
+  prompt: string,
+  options: ProviderImageGenerationOptions,
+  baseUrl: string,
+  correlationId?: string,
+): Promise<AiResult<ImageGenerationResult>> {
+  const normalizedBase = ensureLocalhostIPv4(normalizeBaseUrl(baseUrl));
+  const endpointSuffix = "/images/generations";
+  const endpoints = providerId === PROVIDER_ID_OLLAMA
+    ? [`${normalizedBase}/v1${endpointSuffix}`]
+    : openAICompatibleEndpointCandidates(providerId, normalizedBase, endpointSuffix);
+
+  const headers: Record<string, string> = withCorrelationHeader({
+    "Content-Type": "application/json",
+  }, correlationId);
+  if (apiKey.trim().length > 0) {
+    headers.Authorization = `Bearer ${apiKey.trim()}`;
+  }
+
+  const response = await fetchResponseWithEndpointFallback(endpoints, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      model,
+      prompt,
+      size: options.size ?? "1024x1024",
+      n: 1,
+      response_format: "b64_json",
+      ...(typeof options.seed === "number" ? { seed: options.seed } : {}),
+      ...(typeof options.steps === "number" ? { steps: options.steps } : {}),
+    }),
+  });
+  if (!response.ok) {
+    return { ok: false, error: response.error };
+  }
+
+  const payload = await response.response.text();
+  const parsed = safeParseJson<JsonRecord>(payload);
+  if (!parsed.ok) {
+    return { ok: false, error: parsed.error };
+  }
+  const data = Array.isArray(parsed.data.data) ? parsed.data.data : [];
+  const first = data[0];
+  if (!isRecord(first)) {
+    return { ok: false, error: "Image generation response did not include image data." };
+  }
+  if (typeof first.b64_json === "string" && first.b64_json.trim().length > 0) {
+    return {
+      ok: true,
+      data: {
+        mimeType: "image/png",
+        data: first.b64_json.trim(),
+      },
+    };
+  }
+  if (typeof first.url === "string" && first.url.trim().length > 0) {
+    return fetchImageFromUrl(first.url.trim());
+  }
+  return { ok: false, error: "Image generation response did not include b64_json/url output." };
+}
+
+async function huggingFaceImageGeneration(
+  apiKey: string,
+  model: string,
+  prompt: string,
+  options: ProviderImageGenerationOptions,
+  correlationId?: string,
+): Promise<AiResult<ImageGenerationResult>> {
+  if (!apiKey.trim().length) {
+    return { ok: false, error: "Hugging Face image generation requires an API key." };
+  }
+  const base = AI_WORKFLOW_HF_IMAGE_BASE_URL.replace(/\/+$/, "");
+  const endpoint = `${base}/${model}`;
+  const headers = withCorrelationHeader({
+    Authorization: `Bearer ${apiKey.trim()}`,
+    "Content-Type": "application/json",
+    Accept: "image/png",
+  }, correlationId);
+
+  const response = await fetchWithTimeout(endpoint, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      inputs: prompt,
+      parameters: {
+        ...(typeof options.seed === "number" ? { seed: options.seed } : {}),
+        ...(typeof options.steps === "number" ? { num_inference_steps: options.steps } : {}),
+        ...(typeof options.size === "string" && options.size.trim().length > 0 ? (() => {
+          const parts = options.size.split("x").map(Number);
+          return parts.length === 2 && parts.every(Number.isFinite)
+            ? { width: parts[0], height: parts[1] }
+            : {};
+        })() : {}),
+      },
+    }),
+  }).then((value) => ({ ok: true as const, value }), (failure: FetchFailure) => ({ ok: false as const, failure }));
+
+  if (!response.ok) {
+    return { ok: false, error: fetchFailureMessage(response.failure) };
+  }
+  if (!response.value.ok) {
+    const reason = await readBodyWithTimeout(response.value);
+    return { ok: false, error: `${response.value.status}: ${reason}` };
+  }
+
+  const mimeType = response.value.headers.get("content-type") ?? "image/png";
+  const bytes = new Uint8Array(await response.value.arrayBuffer());
+  return {
+    ok: true,
+    data: {
+      mimeType,
+      data: Buffer.from(bytes).toString("base64"),
+    },
+  };
+}
+
+async function fetchImageFromUrl(url: string): Promise<AiResult<ImageGenerationResult>> {
+  const response = await fetchWithTimeout(url, {
+    method: "GET",
+  }).then((value) => ({ ok: true as const, value }), (failure: FetchFailure) => ({ ok: false as const, failure }));
+  if (!response.ok) {
+    return { ok: false, error: fetchFailureMessage(response.failure) };
+  }
+  if (!response.value.ok) {
+    const reason = await readBodyWithTimeout(response.value);
+    return { ok: false, error: `${response.value.status}: ${reason}` };
+  }
+  const mimeType = response.value.headers.get("content-type") ?? "image/png";
+  const bytes = new Uint8Array(await response.value.arrayBuffer());
+  return {
+    ok: true,
+    data: {
+      mimeType,
+      data: Buffer.from(bytes).toString("base64"),
+    },
+  };
+}
+
 /**
  * OpenAI-compatible chat completion.
  * Works for OpenAI, Google Gemini, Mistral, Groq, OpenRouter, and Ollama.
@@ -682,6 +861,7 @@ async function openaiCompatibleChat(
   model: string,
   messages: ChatMessage[],
   providerId: ProviderId,
+  correlationId?: string,
 ): Promise<AiResult<string>> {
   const normalizedBase = ensureLocalhostIPv4(normalizeBaseUrl(baseUrl));
   const headers: Record<string, string> = {
@@ -692,12 +872,15 @@ async function openaiCompatibleChat(
     headers["Authorization"] = `Bearer ${apiKey}`;
   }
 
-  if (providerId === "openrouter") {
+  if (providerId === PROVIDER_ID_OPENROUTER) {
     headers["HTTP-Referer"] = OPENROUTER_HTTP_REFERER;
     headers["X-Title"] = OPENROUTER_APP_TITLE;
   }
+  if (correlationId && correlationId.trim().length > 0) {
+    headers["x-correlation-id"] = correlationId.trim();
+  }
 
-  const endpoints = providerId === "ollama"
+  const endpoints = providerId === PROVIDER_ID_OLLAMA
     ? [`${normalizedBase}${OLLAMA_CHAT_COMPLETION_SUFFIX}`]
     : openAICompatibleEndpointCandidates(providerId, normalizedBase, OPENAI_CHAT_COMPLETION_SUFFIX);
   const response = await fetchResponseWithEndpointFallback(endpoints, {
@@ -709,7 +892,7 @@ async function openaiCompatibleChat(
     return { ok: false, error: response.error };
   }
 
-  const body = await response.response.text();
+  const body = await readBodyWithTimeout(response.response);
   const parseResult = safeParseJson<JsonRecord>(body);
   if (!parseResult.ok) {
     return { ok: false, error: parseResult.error };
@@ -724,7 +907,7 @@ async function openaiCompatibleChat(
   const content = typeof message === "string" ? message : undefined;
   return content
     ? { ok: true, data: content }
-    : { ok: false, error: "No content in response" };
+    : { ok: false, error: AI_CHAT_NO_CONTENT_ERROR };
 }
 
 /**
@@ -736,6 +919,7 @@ async function anthropicChat(
   apiKey: string,
   model: string,
   messages: ChatMessage[],
+  correlationId?: string,
 ): Promise<AiResult<string>> {
   const normalizedBase = normalizeBaseUrl(baseUrl);
   const systemMsg = messages.find((m) => m.role === "system");
@@ -758,22 +942,26 @@ async function anthropicChat(
     body.system = systemMsg.content;
   }
 
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "x-api-key": apiKey,
+    "anthropic-version": ANTHROPIC_API_VERSION,
+  };
+  if (correlationId && correlationId.trim().length > 0) {
+    headers["x-correlation-id"] = correlationId.trim();
+  }
   const response = await fetchWithTimeout(`${normalizedBase}/messages`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": ANTHROPIC_API_VERSION,
-    },
+    headers,
     body: JSON.stringify(body),
   });
 
   if (!response.ok) {
-    const errBody = await response.text();
+    const errBody = await readBodyWithTimeout(response);
     return { ok: false, error: `${response.status}: ${errBody}` };
   }
 
-  const responseText = await response.text();
+  const responseText = await readBodyWithTimeout(response);
   const parseResult = safeParseJson<JsonRecord>(responseText);
   if (!parseResult.ok) {
     return { ok: false, error: parseResult.error };
@@ -786,7 +974,7 @@ async function anthropicChat(
     : undefined;
   return text
     ? { ok: true, data: text }
-    : { ok: false, error: "No text content in Anthropic response" };
+    : { ok: false, error: AI_ANTHROPIC_NO_TEXT_ERROR };
 }
 
 /**
@@ -794,16 +982,19 @@ async function anthropicChat(
  */
 export async function listOllamaModels(
   baseUrl: string = OLLAMA_DEFAULT_BASE_URL,
+  correlationId?: string,
 ): Promise<AiResult<string[]>> {
   const normalizedBase = ensureLocalhostIPv4(normalizeBaseUrl(baseUrl));
-  const response = await fetchWithTimeout(`${normalizedBase}${OLLAMA_TAGS_PATH}`);
+  const response = await fetchWithTimeout(`${normalizedBase}${OLLAMA_TAGS_PATH}`, {
+    headers: withCorrelationHeader({}, correlationId),
+  });
 
   if (!response.ok) {
-    const body = await response.text();
+    const body = await readBodyWithTimeout(response);
     return { ok: false, error: `Ollama unreachable: ${response.status} ${body}` };
   }
 
-  const body = await response.text();
+  const body = await readBodyWithTimeout(response);
   const parseResult = safeParseJson<JsonRecord>(body);
   if (!parseResult.ok) {
     return { ok: false, error: parseResult.error };
@@ -817,6 +1008,83 @@ export async function listOllamaModels(
   return { ok: true, data: names };
 }
 
+/** Ollama model details from `/api/show`. */
+export interface OllamaModelDetails {
+  name: string;
+  family: string | null;
+  parameterSize: string | null;
+  quantizationLevel: string | null;
+  capabilities: string[];
+}
+
+/**
+ * Fetch detailed model information from Ollama's `/api/show` endpoint.
+ * Uses provider-declared capabilities from the native response contract.
+ */
+export async function getOllamaModelDetails(
+  modelName: string,
+  baseUrl: string = OLLAMA_DEFAULT_BASE_URL,
+  correlationId?: string,
+): Promise<AiResult<OllamaModelDetails>> {
+  const normalizedBase = ensureLocalhostIPv4(normalizeBaseUrl(baseUrl));
+  const responseResult = await captureResultAsync(
+    () => fetchWithTimeout(`${normalizedBase}/api/show`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...withCorrelationHeader({}, correlationId),
+      },
+      body: JSON.stringify({ model: modelName }),
+    }),
+    (failure) => normalizeSharedFailureMessage(failure, `Failed to query Ollama /api/show for ${modelName}`),
+  );
+  if (!responseResult.ok) {
+    return { ok: false, error: responseResult.error };
+  }
+
+  const response = responseResult.data;
+  if (!response.ok) {
+    return { ok: false, error: `Ollama /api/show returned ${response.status}` };
+  }
+
+  const bodyResult = await captureResultAsync(
+    () => readBodyWithTimeout(response),
+    (failure) => normalizeSharedFailureMessage(failure, `Failed to read Ollama /api/show response for ${modelName}`),
+  );
+  if (!bodyResult.ok) {
+    return { ok: false, error: bodyResult.error };
+  }
+
+  const parseResult = safeParseJson<JsonRecord>(bodyResult.data);
+  if (!parseResult.ok) {
+    return { ok: false, error: parseResult.error };
+  }
+  const json = parseResult.data;
+
+  const details = isRecord(json.details) ? json.details : {};
+  const family = jsonValueToString(details.family) || null;
+  const parameterSize = jsonValueToString(details.parameter_size) || null;
+  const quantizationLevel = jsonValueToString(details.quantization_level) || null;
+  const capabilities = Array.isArray(json.capabilities)
+    ? dedupeModelList(
+      json.capabilities
+        .map((capabilityValue) => jsonValueToString(capabilityValue).toLowerCase())
+        .filter((capability) => capability.length > 0),
+    )
+    : [];
+
+  return {
+    ok: true,
+    data: {
+      name: modelName,
+      family,
+      parameterSize,
+      quantizationLevel,
+      capabilities,
+    },
+  };
+}
+
 /**
  * Test connectivity to a provider by listing available models.
  * Uses provider-specific list endpoints (e.g. Ollama /api/tags, OpenAI /models)
@@ -826,18 +1094,82 @@ export async function testConnection(
   providerId: ProviderId,
   apiKey: string,
   baseUrlOverride?: string,
+  correlationId?: string,
 ): Promise<AiResult<string>> {
   const provider = getProvider(providerId);
   if (!provider) return { ok: false, error: `Unknown provider: ${providerId}` };
 
-  const result = await listProviderModels(providerId, apiKey, baseUrlOverride);
+  const result = await listProviderModels(providerId, apiKey, baseUrlOverride, correlationId);
   return result.ok ? { ok: true, data: "ok" } : { ok: false, error: result.error };
 }
 
+function shouldRetryStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function isAbortLike(failure: FetchFailure): boolean {
+  if (failure instanceof Error) {
+    return failure.name === "AbortError";
+  }
+  if (typeof failure === "object" && failure !== null && "name" in failure) {
+    return failure.name === "AbortError";
+  }
+  return false;
+}
+
+function delayForAttempt(attempt: number): number {
+  const base = Math.max(1, AI_HTTP_RETRY_BASE_DELAY_MS);
+  const cap = Math.max(base, AI_HTTP_RETRY_MAX_DELAY_MS);
+  const raw = base * (2 ** attempt);
+  return Math.min(raw, cap);
+}
+
+async function waitMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function fetchWithTimeout(input: string, init: RequestInit = {}): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), AI_PROVIDER_REQUEST_TIMEOUT_MS);
-  return fetch(input, { ...init, signal: controller.signal }).finally(() => {
+  let attempt = 0;
+  while (true) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), AI_PROVIDER_REQUEST_TIMEOUT_MS);
+    const requestInit: RequestInit = { ...init, signal: controller.signal };
+    const response = await fetch(input, requestInit).then(
+      (value) => ({ ok: true as const, value }),
+      (failure: FetchFailure) => ({ ok: false as const, failure }),
+    );
     clearTimeout(timeout);
-  });
+
+    if (response.ok) {
+      if (shouldRetryStatus(response.value.status) && attempt < AI_HTTP_MAX_RETRIES) {
+        const backoffMs = delayForAttempt(attempt);
+        attempt += 1;
+        await waitMs(backoffMs);
+        continue;
+      }
+      return response.value;
+    }
+
+    if (attempt < AI_HTTP_MAX_RETRIES && !isAbortLike(response.failure)) {
+      const backoffMs = delayForAttempt(attempt);
+      attempt += 1;
+      await waitMs(backoffMs);
+      continue;
+    }
+
+    throw response.failure;
+  }
+}
+
+/**
+ * Read response body text with a timeout guard.
+ * Prevents unbounded `.text()` reads when providers stall after sending headers.
+ */
+async function readBodyWithTimeout(response: Response, timeoutMs: number = RESPONSE_BODY_READ_TIMEOUT_MS): Promise<string> {
+  return Promise.race([
+    response.text(),
+    new Promise<never>((_resolve, reject) =>
+      setTimeout(() => reject(new Error(`Response body read timed out after ${timeoutMs}ms`)), timeoutMs),
+    ),
+  ]);
 }

@@ -1,12 +1,27 @@
 {
   "name": "vertu-edge",
   "private": true,
-  "type": "module",
   "scripts": {
+    "bootstrap": "bun run --cwd tooling/vertu-flow-kit bootstrap",
     "typecheck": "bun run --cwd control-plane typecheck && bun run --cwd tooling/vertu-flow-kit typecheck",
     "typecheck:all": "bun run --cwd control-plane typecheck && bun run --cwd tooling/vertu-flow-kit typecheck",
     "lint": "bun run --cwd control-plane lint && bun run --cwd tooling/vertu-flow-kit lint",
     "lint:all": "bun run --cwd control-plane lint && bun run --cwd tooling/vertu-flow-kit lint",
-    "test": "bun run --cwd control-plane test && bun run --cwd tooling/vertu-flow-kit test"
-  }
+    "test": "bun run --cwd control-plane test && bun run --cwd tooling/vertu-flow-kit test",
+    "verify": "bun run --cwd tooling/vertu-flow-kit src/cli.ts verify all",
+    "audit": "bun run --cwd tooling/vertu-flow-kit src/cli.ts audit",
+    "audit:code-practices": "bun run --cwd tooling/vertu-flow-kit src/cli.ts audit code-practices",
+    "audit:capability-gaps": "bun run --cwd tooling/vertu-flow-kit src/cli.ts audit capability-gaps",
+    "audit:device-readiness": "bun run --cwd tooling/vertu-flow-kit src/cli.ts audit device-readiness",
+    "audit:version-freshness": "bun run --cwd tooling/vertu-flow-kit src/cli.ts audit version-freshness",
+    "build:android": "bun run --cwd tooling/vertu-flow-kit src/cli.ts build android",
+    "build:ios": "bun run --cwd tooling/vertu-flow-kit src/cli.ts build ios",
+    "build:desktop": "bun run --cwd tooling/vertu-flow-kit src/cli.ts build desktop",
+    "build:matrix": "bun run --cwd tooling/vertu-flow-kit src/cli.ts build matrix",
+    "device-ai:download-model": "bun run --cwd tooling/vertu-flow-kit src/cli.ts device-ai download-model",
+    "verify:all": "bun run --cwd tooling/vertu-flow-kit src/cli.ts verify all",
+    "verify:smoke-control-plane": "bun run --cwd tooling/vertu-flow-kit src/cli.ts verify smoke-control-plane",
+    "doctor": "bun run --cwd tooling/vertu-flow-kit src/cli.ts doctor"
+  },
+  "type": "module"
 }

@@ -1,9 +1,13 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
   type FlowRunResult,
   type FlowRunJobEnvelope,
   type AppBuildEnvelope,
   type AppBuildRequest,
+  type AiWorkflowCapabilityEnvelope,
+  type AiWorkflowJobEnvelope,
+  type AiWorkflowRequest,
+  type DeviceAiReadinessEnvelope,
   type ModelPullEnvelope,
   type ModelPullRequest,
   type FlowRunLogEvent,
@@ -11,13 +15,30 @@ import {
   createFlowCapabilityError,
 } from "../../contracts/flow-contracts";
 import { type UCPDiscoverResponse } from "../../contracts/ucp-contracts";
-import { createControlPlaneApp, resetChatRateLimitForTest, type ControlPlaneServices } from "../src/app";
+import { createControlPlaneApp, type ControlPlaneServices } from "../src/app";
+import { startAppBuildJob } from "../src/app-builds";
 import { initDb } from "../src/db";
 import { deleteApiKey, getApiKey } from "../src/ai-keys";
 import { MAX_MODEL_PULL_TIMEOUT_MS } from "../src/config";
 import { API_HEALTH_ROUTE } from "../src/runtime-constants";
 
 initDb();
+
+async function withEncryptionKey<T>(key: string | undefined, action: () => Promise<T>): Promise<T> {
+  const previous = process.env.VERTU_ENCRYPTION_KEY;
+  if (key === undefined) {
+    delete process.env.VERTU_ENCRYPTION_KEY;
+  } else {
+    process.env.VERTU_ENCRYPTION_KEY = key;
+  }
+  return action().finally(() => {
+    if (previous === undefined) {
+      delete process.env.VERTU_ENCRYPTION_KEY;
+    } else {
+      process.env.VERTU_ENCRYPTION_KEY = previous;
+    }
+  });
+}
 
 function buildModelLoadingEnvelope(request: ModelPullRequest): ModelPullEnvelope {
   const requestedModelRef = request.modelRef ?? "huggingface.co/zai-org/AutoGLM-Phone-9B-Multilingual";
@@ -95,6 +116,36 @@ function buildAppSuccessEnvelope(jobId: string): AppBuildEnvelope {
       elapsedMs: 1234,
     },
     mismatches: [],
+  };
+}
+
+function buildAppFailureEnvelope(jobId: string): AppBuildEnvelope {
+  return {
+    route: "/api/apps/build",
+    state: "error-non-retryable",
+    jobId,
+    data: {
+      platform: "ios",
+      buildType: "debug",
+      status: "failed",
+      exitCode: 1,
+      stdout: "",
+      stderr: "APP_BUILD_FAILURE_CODE=ios_platform_support_missing\nAPP_BUILD_FAILURE_MESSAGE=Missing iOS simulator platform support for scheme VertuEdgeHost.",
+      artifactPath: null,
+      elapsedMs: 456,
+      failureCode: "ios_platform_support_missing",
+      failureMessage: "Missing iOS simulator platform support for scheme VertuEdgeHost.",
+    },
+    mismatches: ["app build failed for ios"],
+    error: createFlowCapabilityError({
+      commandIndex: -1,
+      command: "ios",
+      code: "ios_platform_support_missing",
+      reason: "app build failed for ios",
+      retryable: false,
+      surface: "app_build",
+      resource: "ios",
+    }),
   };
 }
 
@@ -236,6 +287,87 @@ function buildFlowRunEvents(): readonly FlowRunLogEvent[] {
   ];
 }
 
+function buildAiWorkflowJobEnvelope(status: "queued" | "running" | "paused" | "succeeded" | "failed" | "cancelled"): AiWorkflowJobEnvelope {
+  return {
+    route: "/api/ai/workflows/jobs",
+    jobId: "wf-job-123",
+    state: status === "succeeded" ? "success" : (status === "queued" || status === "running" || status === "paused" ? "loading" : "error-non-retryable"),
+    data: {
+      jobId: "wf-job-123",
+      status,
+      correlationId: "corr-wf-123",
+      stdout: status === "succeeded" ? "ok" : "",
+      stderr: status === "failed" ? "workflow failed" : "",
+      elapsedMs: 420,
+      result: status === "succeeded"
+        ? {
+          mode: "typography",
+          requestedProvider: "ollama",
+          providerPath: "local:ollama",
+          requestedModel: "llama3.2",
+          effectiveModel: "llama3.2",
+          reply: "Typography direction output",
+        }
+        : undefined,
+    },
+    mismatches: [],
+  };
+}
+
+function buildAiWorkflowCapabilitiesEnvelope(): AiWorkflowCapabilityEnvelope {
+  return {
+    route: "/api/ai/workflows/capabilities",
+    state: "success",
+    data: {
+      modes: [
+        { mode: "chat", localAvailable: true, remoteAvailable: false },
+        { mode: "typography", localAvailable: true, remoteAvailable: true },
+        { mode: "presentation", localAvailable: true, remoteAvailable: true },
+        { mode: "social", localAvailable: true, remoteAvailable: true },
+        { mode: "image", localAvailable: false, remoteAvailable: true, reason: "local unavailable" },
+      ],
+    },
+    mismatches: [],
+  };
+}
+
+function buildDeviceAiReadinessEnvelope(status: "ready" | "blocked" | "skipped" | "delegated"): DeviceAiReadinessEnvelope {
+  return {
+    route: "/api/device-ai/readiness",
+    state: status === "ready" ? "success" : (status === "blocked" ? "error-non-retryable" : "empty"),
+    data: {
+      status,
+      hostOs: "Darwin",
+      shouldRun: status === "ready" || status === "blocked",
+      delegated: status === "delegated",
+      requirements: [
+        { code: "hf_token", required: true, satisfied: status !== "blocked" },
+        { code: "android_adb", required: true, satisfied: true },
+        { code: "ios_macos_host", required: true, satisfied: true },
+        { code: "ios_xcrun", required: true, satisfied: true },
+        { code: "ios_simctl", required: true, satisfied: true },
+      ],
+      failures: status === "blocked"
+        ? ["HF_TOKEN or HUGGINGFACE_HUB_TOKEN is required for the mandatory Hugging Face runtime probe."]
+        : [],
+      buildArtifacts: {
+        android: { platform: "android", status: "pass", artifactPath: "/tmp/app-debug.apk" },
+        ios: status === "blocked"
+          ? {
+            platform: "ios",
+            status: "fail",
+            failureCode: "ios_platform_support_missing",
+            failureMessage: "Missing iOS simulator platform support for scheme VertuEdgeHost.",
+          }
+          : { platform: "ios", status: "pass", artifactPath: "/tmp/VertuEdgeHost.zip" },
+      },
+    },
+    ...(status === "blocked"
+      ? { mismatches: ["HF_TOKEN or HUGGINGFACE_HUB_TOKEN is required for the mandatory Hugging Face runtime probe."] }
+      : {}),
+  };
+}
+
 function createDeterministicServices(overrides: Partial<ControlPlaneServices> = {}): ControlPlaneServices {
   return {
     startModelPullJob: async (request: ModelPullRequest): Promise<ModelPullEnvelope> => buildModelLoadingEnvelope(request),
@@ -245,6 +377,7 @@ function createDeterministicServices(overrides: Partial<ControlPlaneServices> = 
         throw createFlowCapabilityError({
           commandIndex: -1,
           command: "platform",
+          code: "app_build_ios_mac_only",
           reason: "iOS build is only supported on macOS hosts.",
           retryable: false,
           surface: "app_build",
@@ -254,6 +387,11 @@ function createDeterministicServices(overrides: Partial<ControlPlaneServices> = 
       return buildAppLoadingEnvelope(request);
     },
     getAppBuildJobEnvelope: (jobId: string): AppBuildEnvelope => buildAppSuccessEnvelope(jobId),
+    startAiWorkflowJob: (_request: AiWorkflowRequest): AiWorkflowJobEnvelope => buildAiWorkflowJobEnvelope("queued"),
+    getAiWorkflowJobEnvelope: (_jobId: string): AiWorkflowJobEnvelope => buildAiWorkflowJobEnvelope("succeeded"),
+    getAiWorkflowJobLogEvents: () => [],
+    getAiWorkflowCapabilityEnvelope: async () => buildAiWorkflowCapabilitiesEnvelope(),
+    resolveDeviceAiReadinessEnvelope: () => buildDeviceAiReadinessEnvelope("ready"),
     ...overrides,
   };
 }
@@ -279,15 +417,7 @@ async function readDiscoverJson(
   return (await response.json()) as UCPDiscoverResponse;
 }
 
-type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
-
-async function withMockedFetch<T>(mockFetch: FetchLike, action: () => Promise<T>): Promise<T> {
-  const previousFetch = globalThis.fetch;
-  (globalThis as { fetch: FetchLike }).fetch = mockFetch;
-  return action().finally(() => {
-    (globalThis as { fetch: FetchLike }).fetch = previousFetch;
-  });
-}
+import { withMockedFetch, type FetchLike } from "./_helpers";
 
 const validUcpManifestResponse = {
   ucp: {
@@ -331,12 +461,80 @@ const validUcpPaymentsManifestResponse = {
   },
 };
 
-describe("HTTP model/build capability routes", () => {
-  beforeEach(() => {
-    // Reset the chat rate limiter between tests so rate-limiting doesn't bleed across test cases.
-    resetChatRateLimitForTest();
+describe("Dashboard section fragment routes", () => {
+  test("GET /dashboard/runtime with HX-Request returns fragment (no <html>)", async () => {
+    const app = createControlPlaneApp({ services: createDeterministicServices() });
+    const response = await app.handle(new Request("http://localhost/dashboard/runtime", {
+      headers: { "hx-request": "true" },
+    }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    const html = await response.text();
+    expect(html).toContain('id="section-runtime"');
+    expect(html).not.toContain("<!DOCTYPE html>");
+    expect(html).not.toContain("<html");
   });
 
+  test("GET /dashboard/runtime without HX-Request returns full page", async () => {
+    const app = createControlPlaneApp({ services: createDeterministicServices() });
+    const response = await app.handle(new Request("http://localhost/dashboard/runtime"));
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain('id="section-runtime"');
+    expect(html).toContain("<!DOCTYPE html>");
+  });
+
+  test("GET /dashboard/build returns build section fragment", async () => {
+    const app = createControlPlaneApp({ services: createDeterministicServices() });
+    const response = await app.handle(new Request("http://localhost/dashboard/build", {
+      headers: { "hx-request": "true" },
+    }));
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain('id="section-build"');
+    expect(html).not.toContain("<!DOCTYPE html>");
+  });
+
+  test("GET /dashboard/automation returns automation section fragment", async () => {
+    const app = createControlPlaneApp({ services: createDeterministicServices() });
+    const response = await app.handle(new Request("http://localhost/dashboard/automation", {
+      headers: { "hx-request": "true" },
+    }));
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain('id="section-automation"');
+  });
+
+  test("GET /dashboard/system returns system section fragment", async () => {
+    const app = createControlPlaneApp({ services: createDeterministicServices() });
+    const response = await app.handle(new Request("http://localhost/dashboard/system", {
+      headers: { "hx-request": "true" },
+    }));
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain('id="section-system"');
+  });
+
+  test("GET /dashboard/overview returns overview section fragment", async () => {
+    const app = createControlPlaneApp({ services: createDeterministicServices() });
+    const response = await app.handle(new Request("http://localhost/dashboard/overview", {
+      headers: { "hx-request": "true" },
+    }));
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain('id="section-overview"');
+  });
+
+  test("GET /dashboard/invalid returns 404", async () => {
+    const app = createControlPlaneApp({ services: createDeterministicServices() });
+    const response = await app.handle(new Request("http://localhost/dashboard/invalid", {
+      headers: { "hx-request": "true" },
+    }));
+    expect(response.status).toBe(404);
+  });
+});
+
+describe("HTTP model/build capability routes", () => {
   test("GET /api/health returns JSON readiness payload", async () => {
     const app = createControlPlaneApp({ services: createDeterministicServices() });
     const response = await app.handle(new Request(`http://localhost${API_HEALTH_ROUTE}`));
@@ -544,10 +742,26 @@ describe("HTTP model/build capability routes", () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ platform: "ios", buildType: "debug" }),
+    }, {
+      startAppBuildJob,
     });
 
     expect(html).toContain('data-state="error-non-retryable"');
-    expect(html).toContain("iOS build is only supported on macOS hosts.");
+    expect(html).toContain("iOS builds can only run on macOS hosts.");
+  });
+
+  test("POST /api/apps/build invalid outputDir renders localized typed failure", async () => {
+    const html = await readHtml("/api/apps/build", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ platform: "android", buildType: "debug", outputDir: "../outside-build-root" }),
+    }, {
+      startAppBuildJob,
+    });
+
+    expect(html).toContain('data-state="error-non-retryable"');
+    expect(html).toContain("outputDir must not traverse parent directories.");
+    expect(html).toContain("The requested build output directory is invalid or unavailable.");
   });
 
   test("GET /api/apps/build/:jobId returns terminal envelope with artifact and elapsed", async () => {
@@ -559,6 +773,29 @@ describe("HTTP model/build capability routes", () => {
     expect(html).toContain("artifact=/tmp/app-debug.apk");
     expect(html).toContain("Elapsed ms: 1234");
     expect(html).toContain("Open artifact");
+  });
+
+  test("GET /api/apps/build/:jobId renders localized typed build failure detail", async () => {
+    const html = await readHtml("/api/apps/build/app-build-failed", {
+      method: "GET",
+    }, {
+      getAppBuildJobEnvelope: () => buildAppFailureEnvelope("app-build-failed"),
+    });
+
+    expect(html).toContain('data-state="error-non-retryable"');
+    expect(html).toContain("The required iOS simulator or device platform assets are not installed.");
+  });
+
+  test("GET /api/device-ai/readiness renders deterministic readiness fragment", async () => {
+    const html = await readHtml("/api/device-ai/readiness", undefined, {
+      resolveDeviceAiReadinessEnvelope: () => buildDeviceAiReadinessEnvelope("blocked"),
+    });
+
+    expect(html).toContain("Native device readiness");
+    expect(html).toContain("HF_TOKEN or HUGGINGFACE_HUB_TOKEN is required");
+    expect(html).toContain("/tmp/app-debug.apk");
+    expect(html).toContain("Provision the required iOS simulator or device assets before building.");
+    expect(html).toContain('data-state="error-non-retryable"');
   });
 
   test("POST /api/flows/validate validates YAML without execution", async () => {
@@ -770,8 +1007,10 @@ describe("HTTP model/build capability routes", () => {
 
     expect(html).toContain('data-state="loading"');
     expect(html).toContain("Run lifecycle");
-    expect(html).toContain("Run lifecycle");
     expect(html).toContain("/api/flows/runs/flow-run-123/cancel");
+    expect(html).toContain('id="flow-result-wrapper"');
+    expect(html).toContain('hx-ext="job-poll"');
+    expect(html).toContain('job-poll-url="/api/flows/runs/flow-run-123"');
   });
 
   test("GET /api/flows/runs/:runId returns terminal run envelope", async () => {
@@ -780,6 +1019,7 @@ describe("HTTP model/build capability routes", () => {
     });
 
     expect(html).toContain('data-state="success"');
+    expect(html).toContain('data-job-terminal="true"');
     expect(html).toContain("Run ID: flow-run-123");
     expect(html).toContain("launchApp");
   });
@@ -943,17 +1183,34 @@ describe("HTTP model/build capability routes", () => {
     expect(html).toContain('data-state="error-non-retryable"');
   });
 
+  test("POST /api/ai/keys requires secure storage before persisting provider keys", async () => {
+    const html = await withEncryptionKey(undefined, () =>
+      readHtml("/api/ai/keys", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider: "openai", apiKey: "test-openai-key" }),
+      })
+    );
+
+    expect(html).toContain("Set VERTU_ENCRYPTION_KEY before storing provider credentials.");
+    expect(html).toContain('data-state="error-non-retryable"');
+  });
+
   test("POST /api/ai/keys stores API key for reuse by provider actions", async () => {
     const provider = "openai";
     const key = "test-openai-key";
+    const encryptionKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
-    await readHtml("/api/ai/keys", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ provider, apiKey: key }),
-    });
+    await withEncryptionKey(encryptionKey, () =>
+      readHtml("/api/ai/keys", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider, apiKey: key }),
+      })
+    );
 
-    expect(getApiKey(provider)).toBe(key);
+    const storedKey = await withEncryptionKey(encryptionKey, async () => getApiKey(provider));
+    expect(storedKey).toBe(key);
 
     deleteApiKey(provider);
   });
@@ -999,144 +1256,99 @@ describe("HTTP model/build capability routes", () => {
     expect(html).toContain("1");
   });
 
-  test("POST /api/ai/chat requires explicit model selection", async () => {
-    const html = await readHtml("/api/ai/chat", {
+  test("POST /api/ai/workflows/run returns loading workflow job envelope", async () => {
+    const html = await readHtml("/api/ai/workflows/run", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ provider: "openai", apiKey: "test-openai-key", message: "Hello" }),
+      body: JSON.stringify({
+        mode: "typography",
+        provider: "ollama",
+        model: "llama3.2",
+        message: "Create typography guidance",
+      }),
+    }, {
+      startAiWorkflowJob: (_request: AiWorkflowRequest): AiWorkflowJobEnvelope => buildAiWorkflowJobEnvelope("queued"),
+    });
+
+    expect(html).toContain('data-state="loading"');
+    expect(html).toContain("Refresh status");
+    expect(html).toContain("/api/ai/workflows/jobs/wf-job-123");
+    expect(html).toContain('hx-ext="job-poll"');
+    expect(html).toContain('job-poll-url="/api/ai/workflows/jobs/wf-job-123"');
+  });
+
+  test("POST /api/ai/workflows/run validates image option ranges", async () => {
+    const html = await readHtml("/api/ai/workflows/run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        mode: "image",
+        message: "Generate hero image",
+        imageOptions: {
+          steps: 101,
+        },
+      }),
     });
 
     expect(html).toContain('data-state="error-non-retryable"');
-    expect(html).toContain("No model selected.");
+    expect(html).toContain("imageOptions.steps must be between 1 and 100.");
   });
 
-  test("POST /api/ai/chat returns unauthorized when provider key is missing", async () => {
+  test("GET /api/ai/workflows/jobs/:jobId returns workflow output envelope", async () => {
+    const html = await readHtml("/api/ai/workflows/jobs/wf-job-123", {
+      method: "GET",
+    }, {
+      getAiWorkflowJobEnvelope: (_jobId: string): AiWorkflowJobEnvelope => buildAiWorkflowJobEnvelope("succeeded"),
+    });
+
+    expect(html).toContain('data-job-terminal="true"');
+    expect(html).toContain("Typography direction output");
+  });
+
+  test("GET /api/ai/workflows/capabilities returns capability matrix", async () => {
+    const html = await readHtml("/api/ai/workflows/capabilities", {
+      method: "GET",
+    }, {
+      getAiWorkflowCapabilityEnvelope: async () => buildAiWorkflowCapabilitiesEnvelope(),
+    });
+
+    expect(html).toContain("AI workflow capabilities");
+    expect(html).toContain("<code>image</code>");
+    expect(html).toContain("local unavailable");
+    expect(html).toContain("Selected mode");
+  });
+
+  test("GET /api/ai/workflows/form-fields returns image controls for image mode", async () => {
+    const html = await readHtml("/api/ai/workflows/form-fields?mode=image", {
+      method: "GET",
+    });
+
+    expect(html).toContain("Workflow options");
+    expect(html).toContain("floating-chat-image-size");
+    expect(html).toContain("floating-chat-image-steps-hint");
+    expect(html).not.toContain("floating-chat-audience");
+  });
+
+  test("GET /api/ai/workflows/form-fields returns text controls for text modes", async () => {
+    const html = await readHtml("/api/ai/workflows/form-fields?mode=typography", {
+      method: "GET",
+    });
+
+    expect(html).toContain("Workflow options");
+    expect(html).toContain("floating-chat-audience");
+    expect(html).toContain("floating-chat-tone");
+    expect(html).not.toContain("floating-chat-image-size");
+  });
+
+  test("POST /api/ai/chat returns retired-route envelope", async () => {
     const html = await readHtml("/api/ai/chat", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ provider: "openai", model: "gpt-4o-mini", message: "Hello" }),
     });
 
-    expect(html).toContain('data-state="unauthorized"');
-    expect(html).toContain("Missing API key for provider.");
-  });
-
-  test("POST /api/ai/chat accepts speechInput-only request and returns speech transcript", async () => {
-    const expectedTranscript = "Hello from speech";
-    const expectedReply = "Echoing your speech";
-    const sttPayload = Buffer.from("spoken-bytes").toString("base64");
-
-    const html = await withMockedFetch(async (input: string | URL | Request): Promise<Response> => {
-      const url = typeof input === "string"
-        ? input
-        : input instanceof URL
-          ? input.toString()
-          : input.url;
-      if (url.includes("/audio/transcriptions")) {
-        return new Response(JSON.stringify({ text: expectedTranscript }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }
-      if (url.includes("/chat/completions")) {
-        return new Response(JSON.stringify({
-          choices: [{ message: { content: expectedReply } }],
-        }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }
-      throw new Error(`Unexpected provider endpoint: ${url}`);
-    }, () =>
-      readHtml("/api/ai/chat", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          provider: "openai",
-          apiKey: "test-openai-key",
-          model: "gpt-4o-mini",
-          speechInput: {
-            mimeType: "audio/wav",
-            data: sttPayload,
-          },
-        }),
-      })
-    );
-
-    expect(html).toContain('data-state="success"');
-    expect(html).toContain(expectedReply);
-    expect(html).toContain(expectedTranscript);
-    expect(html).toContain('aria-label="Speech transcript message"');
-  });
-
-  test("POST /api/ai/chat returns TTS output when requestTts is enabled", async () => {
-    const expectedReply = "Reply with spoken output";
-    const expectedBase64Tts = Buffer.from("audio-response-bytes").toString("base64");
-
-    const html = await withMockedFetch(async (input: string | URL | Request): Promise<Response> => {
-      const url = typeof input === "string"
-        ? input
-        : input instanceof URL
-          ? input.toString()
-          : input.url;
-      if (url.includes("/chat/completions")) {
-        return new Response(JSON.stringify({
-          choices: [{ message: { content: expectedReply } }],
-        }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }
-      if (url.includes("/audio/speech")) {
-        return new Response(Uint8Array.from(new TextEncoder().encode("audio-response-bytes")), {
-          status: 200,
-          headers: { "content-type": "audio/mpeg" },
-        });
-      }
-      throw new Error(`Unexpected provider endpoint: ${url}`);
-    }, () =>
-      readHtml("/api/ai/chat", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          provider: "openai",
-          apiKey: "test-openai-key",
-          model: "gpt-4o-mini",
-          message: "Please speak this",
-          requestTts: true,
-          ttsOutputMimeType: "audio/mpeg",
-          ttsVoice: "nova",
-        }),
-      })
-    );
-
-    expect(html).toContain('data-state="success"');
-    expect(html).toContain(expectedReply);
-    expect(html).toContain(`audio/mpeg;base64,${expectedBase64Tts}`);
-    expect(html).toContain('aria-label="Text-to-speech audio response"');
-  });
-
-  test("POST /api/ai/chat rejects malformed speechInput even when message is present", async () => {
-    const html = await withMockedFetch(async (): Promise<Response> => {
-      throw new Error("Provider endpoint should not be called for malformed speech input");
-    }, () =>
-      readHtml("/api/ai/chat", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          provider: "openai",
-          apiKey: "test-openai-key",
-          model: "gpt-4o-mini",
-          message: "Hello",
-          speechInput: {
-            mimeType: "   ",
-            data: "   ",
-          },
-        }),
-      })
-    );
-
     expect(html).toContain('data-state="error-non-retryable"');
-    expect(html).toContain("Chat request is missing required message or speech input fields.");
+    expect(html).toContain("This route has been retired");
+    expect(html).toContain("/api/ai/workflows/run");
   });
 });

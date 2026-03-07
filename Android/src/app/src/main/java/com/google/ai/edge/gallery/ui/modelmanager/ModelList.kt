@@ -222,8 +222,10 @@ fun ModelList(
           }
 
           // Description.
+          val taskDescription =
+            if (task.descriptionResId != null) stringResource(task.descriptionResId) else task.description
           Text(
-            task.description,
+            taskDescription,
             textAlign = TextAlign.Center,
             style = bodyLargeNarrow,
             modifier =

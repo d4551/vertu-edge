@@ -31,14 +31,17 @@ function listTypeScriptFiles(dir: string): string[] {
 function collectUsedTranslationKeys(): Set<string> {
   const files = listTypeScriptFiles(SOURCE_DIR);
   const keys = new Set<string>();
-  const patterns = [/t\(\s*"([^"]+)"/g, /tInterp\(\s*"([^"]+)"/g, /tStr\(\s*"([^"]+)"/g];
+  const patterns = [/\bt\(\s*"([^"]+)"/g, /\btInterp\(\s*"([^"]+)"/g, /\btStr\(\s*"([^"]+)"/g];
   for (const file of files) {
     const source = readFileSync(file, "utf8");
     for (const pattern of patterns) {
       pattern.lastIndex = 0;
       let match: RegExpExecArray | null;
       while ((match = pattern.exec(source)) !== null) {
-        keys.add(match[1]);
+        const key = match[1]?.trim();
+        if (key) {
+          keys.add(key);
+        }
       }
     }
   }
@@ -61,5 +64,23 @@ test("all statically referenced translation keys exist in every locale", () => {
     const localeData = readLocale(locale);
     const missing = Array.from(usedKeys).filter((key) => localeData[key] === undefined);
     expect(missing).toEqual([]);
+  }
+});
+
+test("Chinese locale has no broken concatenation artifacts", () => {
+  const zh = readLocale("zh");
+  const values = Object.values(zh);
+  for (const value of values) {
+    expect(value).not.toContain("BAD");
+  }
+});
+
+test("intentionally empty locale values are consistent across all locales", () => {
+  const en = readLocale("en");
+  const emptyInEn = new Set(Object.entries(en).filter(([, v]) => v === "").map(([k]) => k));
+  for (const locale of SUPPORTED_LOCALES) {
+    const localeData = readLocale(locale);
+    const emptyInLocale = new Set(Object.entries(localeData).filter(([, v]) => v === "").map(([k]) => k));
+    expect(emptyInLocale).toEqual(emptyInEn);
   }
 });

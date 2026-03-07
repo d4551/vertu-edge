@@ -33,9 +33,9 @@ echo "" >>"$REPORT_FILE"
 
 run_check "control-plane typecheck" bash -lc "cd '$ROOT_DIR/control-plane' && bun run typecheck"
 run_check "control-plane tests" bash -lc "cd '$ROOT_DIR/control-plane' && bun test"
-run_check "capability audit" bash -lc "cd '$ROOT_DIR/control-plane' && bun run ../scripts/check-capability-gaps.ts"
-run_check "code practice audit" bash -lc "cd '$ROOT_DIR/control-plane' && bun run ../scripts/check-code-practices.ts"
-run_check "version freshness policy (offline)" bash -lc "cd '$ROOT_DIR' && bun run scripts/check-version-freshness.ts"
+run_check "capability audit" bash -lc "cd '$ROOT_DIR' && bun run --cwd tooling/vertu-flow-kit src/cli.ts audit capability-gaps"
+run_check "code practice audit" bash -lc "cd '$ROOT_DIR' && bun run --cwd tooling/vertu-flow-kit src/cli.ts audit code-practices"
+run_check "version freshness policy (offline)" bash -lc "cd '$ROOT_DIR' && bun run --cwd tooling/vertu-flow-kit src/cli.ts audit version-freshness"
 run_check "tooling typecheck" bash -lc "cd '$ROOT_DIR/tooling/vertu-flow-kit' && bun run typecheck"
 run_check "tooling tests" bash -lc "cd '$ROOT_DIR/tooling/vertu-flow-kit' && bun test"
 

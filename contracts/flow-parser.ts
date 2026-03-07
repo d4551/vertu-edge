@@ -101,7 +101,18 @@ function parseYamlDocuments(rawYaml: string): ParsedFlowValue[] {
     docs.push(current.join("\n"));
   }
 
-  return docs.map((doc) => Bun.YAML.parse(doc) as ParsedFlowValue);
+  return docs.map((doc) => {
+    try {
+      return Bun.YAML.parse(doc) as ParsedFlowValue;
+    } catch (e) {
+      throw createFlowCapabilityError({
+        commandIndex: -1,
+        command: "flow",
+        reason: `YAML parse error: ${e instanceof Error ? e.message : String(e)}`,
+        retryable: false,
+      });
+    }
+  });
 }
 
 /**

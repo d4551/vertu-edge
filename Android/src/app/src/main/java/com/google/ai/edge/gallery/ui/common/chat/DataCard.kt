@@ -30,7 +30,7 @@ import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.google.ai.edge.gallery.ui.theme.GalleryTheme
+import com.google.ai.edge.gallery.ui.theme.VertuTheme
 import com.google.ai.edge.gallery.ui.theme.bodySmallMediumNarrow
 import com.google.ai.edge.gallery.ui.theme.bodySmallMediumNarrowBold
 import com.google.ai.edge.gallery.ui.theme.labelSmallNarrow
@@ -72,7 +72,7 @@ fun DataCard(
 @Preview(showBackground = true)
 @Composable
 fun DataCardPreview() {
-  GalleryTheme {
+  VertuTheme {
     Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
       DataCard(
         label = "sum",

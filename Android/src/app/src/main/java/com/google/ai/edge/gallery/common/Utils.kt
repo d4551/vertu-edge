@@ -339,7 +339,7 @@ fun readFileToByteBuffer(file: File): ByteBuffer? {
     fileInputStream.close()
     byteBuffer
   } catch (e: Exception) {
-    e.printStackTrace()
+    Log.e("Utils", "readFileToByteBuffer failed", e)
     null
   }
 }

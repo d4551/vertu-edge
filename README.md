@@ -170,6 +170,8 @@ bun run --cwd tooling/vertu-flow-kit src/cli.ts bootstrap
 bun run --cwd tooling/vertu-flow-kit src/cli.ts verify all
 ```
 
+The canonical verifier fails when the control-plane database contains plaintext provider credentials or encrypted provider credentials that cannot be decrypted with the active `VERTU_ENCRYPTION_KEY`.
+
 Wrapper:
 
 ```bash

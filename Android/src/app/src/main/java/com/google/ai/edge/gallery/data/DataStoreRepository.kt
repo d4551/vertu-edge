@@ -37,6 +37,10 @@ interface DataStoreRepository {
 
   suspend fun readTheme(): Theme
 
+  suspend fun saveAppLocale(localeTag: String)
+
+  suspend fun readAppLocale(): String
+
   suspend fun saveAccessTokenData(accessToken: String, refreshToken: String, expiresAt: Long)
 
   suspend fun clearAccessTokenData()
@@ -102,6 +106,14 @@ class DefaultDataStoreRepository(
   override suspend fun readTheme(): Theme {
     val curTheme = dataStore.data.first().theme
     return if (curTheme == Theme.THEME_UNSPECIFIED) Theme.THEME_AUTO else curTheme
+  }
+
+  override suspend fun saveAppLocale(localeTag: String) {
+    dataStore.updateData { settings -> settings.toBuilder().setAppLocaleTag(localeTag).build() }
+  }
+
+  override suspend fun readAppLocale(): String {
+    return dataStore.data.first().appLocaleTag
   }
 
   override suspend fun saveAccessTokenData(
@@ -229,4 +241,3 @@ class DefaultDataStoreRepository(
     }
   }
 }
-
